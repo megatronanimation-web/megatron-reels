@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url><loc>https://megatronmultimedia.com/</loc><priority>1.0</priority><changefreq>weekly</changefreq></url>
+  <url><loc>https://megatronmultimedia.com/?category=testimonials</loc><priority>0.8</priority><changefreq>weekly</changefreq></url>
+  <url><loc>https://megatronmultimedia.com/?category=courses</loc><priority>0.9</priority><changefreq>weekly</changefreq></url>
+  <url><loc>https://megatronmultimedia.com/?category=about</loc><priority>0.7</priority><changefreq>monthly</changefreq></url>
+  <url><loc>https://megatronmultimedia.com/?category=classroom</loc><priority>0.7</priority><changefreq>monthly</changefreq></url>
+  <url><loc>https://megatronmultimedia.com/?category=jobs</loc><priority>0.7</priority><changefreq>weekly</changefreq></url>
+  <url><loc>https://megatronmultimedia.com/?category=showreel</loc><priority>0.8</priority><changefreq>weekly</changefreq></url>
+  <url><loc>https://megatronmultimedia.com/?screen=join-class</loc><priority>0.8</priority><changefreq>monthly</changefreq></url>
+  <url><loc>https://megatronmultimedia.com/?screen=direction</loc><priority>0.6</priority><changefreq>monthly</changefreq></url>
+</urlset>

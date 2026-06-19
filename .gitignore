@@ -1,0 +1,11 @@
+node_modules
+dist
+.env
+
+preview-node.err.log
+preview-node.out.log
+vite-preview.err.log
+vite-preview.out.log
+
+.DS_Store
+Thumbs.db
