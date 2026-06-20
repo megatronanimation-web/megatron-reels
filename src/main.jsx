@@ -77,6 +77,7 @@ const BRAND_NAME = "Megatron";
 const BRAND_FULL_NAME = "Megatron College of Multimedia";
 const BRAND_LOGO_SRC = "/brand/MEGATRONLOGO.png";
 const WHATSAPP_NUMBER = "919890044900";
+const SALES_FUNNEL_PAYMENT_URL = "https://rzp.io/rzp/0W5xMSG";
 const WHATSAPP_INFO_MESSAGE = "Hello Megatron Multimedia,\nI need information about courses.";
 const SOCIAL_LINKS = [
   {
@@ -241,7 +242,7 @@ const defaultSalesFunnelContent = {
   trustIndicators: "Secure Payment\nLifetime Access\nAlways Updated",
   socialProof: "Online Now: 167\nStudents Joined Today: 58\n5000+ Students",
   ctaButtons: "INSTANT JOIN\nBOOK FREE COUNSELING\nWHATSAPP NOW\nENROLL NOW",
-  paymentLink: "https://rzp.io/rzp/0W5xMSG",
+  paymentLink: SALES_FUNNEL_PAYMENT_URL,
   metaTitle: "Learn AI Before AI Replaces You | Megatron AI Learning Program",
   metaDescription: "Join Megatron's premium AI learning program for AI image generation, AI video creation, prompt engineering, AI marketing, and automation.",
   metaKeywords: "AI course Pune, prompt engineering, AI image generation, AI video creation, AI marketing, AI automation, Megatron AI course",
@@ -254,8 +255,28 @@ const defaultSalesFunnelContent = {
   phoneNumber: PHONE_NUMBER,
   emailAddress: "megatronanimation@gmail.com",
   whatsappNumber: WHATSAPP_NUMBER,
+  socialLinks: "Instagram: https://www.instagram.com/megatron_multimedia/\nFacebook: https://www.facebook.com/MegatronAnimation/\nYouTube: https://www.youtube.com/c/MegatronAnimation",
   ogImage: "https://images.unsplash.com/photo-1677442136019-21780ecad995?auto=format&fit=crop&w=1200&q=85",
 };
+
+function isAllowedRazorpayUrl(value = "") {
+  const trimmed = String(value || "").trim();
+  if (!trimmed) return false;
+  try {
+    const parsed = new URL(trimmed);
+    return (
+      parsed.protocol === "https:" &&
+      (parsed.hostname === "rzp.io" || parsed.hostname === "pages.razorpay.com")
+    );
+  } catch {
+    return false;
+  }
+}
+
+function getValidatedPaymentUrl(value = "") {
+  const trimmed = String(value || "").trim();
+  return isAllowedRazorpayUrl(trimmed) ? trimmed : SALES_FUNNEL_PAYMENT_URL;
+}
 
 const demoVideos = [
   {
@@ -1991,10 +2012,11 @@ function Header() {
       <img src="/brand/MEGATRONLOGO.png" alt="Megatron Logo" className="h-auto w-20 object-contain sm:w-24" />
       <Link
         to="/offer"
-        className="pointer-events-auto grid h-8 w-8 place-items-center rounded-full border border-[#F5B400] bg-[#050505] text-lg font-black text-[#F5B400] shadow-[0_0_18px_rgba(245,180,0,0.65)] transition active:scale-90"
+        className="pointer-events-auto grid h-8 w-8 place-items-center rounded-full border border-[#F5B400] bg-[#050505] text-[0px] text-[#F5B400] shadow-[0_0_18px_rgba(245,180,0,0.65)] transition active:scale-90"
         aria-label="Open Megatron AI offer"
       >
         ✦
+        <Sparkles size={16} className="text-[#F5B400]" />
       </Link>
     </header>
   );
@@ -2392,6 +2414,7 @@ function ReelsApp() {
   const { items: websiteContentItems } = useFirestoreCollection("websiteContent", defaultWebsiteContentItems);
   const { data: playbackSettings } = useFirestoreDocument("settings", "playback", defaultPlaybackSettings);
   const websiteContent = websiteContentItems[0] || defaultWebsiteContent;
+  const salesFunnelPaymentUrlIsInvalid = Boolean(salesFunnelForm.paymentLink) && !isAllowedRazorpayUrl(salesFunnelForm.paymentLink);
   const autoCategoryLoop = playbackSettings.autoCategoryLoop !== false;
   const categories = React.useMemo(() => mergeCategories(savedCategories), [savedCategories]);
   const courseSubcategories = React.useMemo(() => mergeSubcategories(savedSubcategories), [savedSubcategories]);
@@ -2708,10 +2731,11 @@ function ReelsApp() {
       <TinyPrivacyLink />
       <Link
         to="/offer"
-        className="hidden fixed right-5 top-5 z-[85] h-9 w-9 place-items-center rounded-full border border-[#F5B400] bg-[#050505] text-xl font-black text-[#F5B400] shadow-[0_0_20px_rgba(245,180,0,0.6)] transition hover:scale-105 lg:grid"
+        className="fixed right-5 top-5 z-[85] hidden h-9 w-9 place-items-center rounded-full border border-[#F5B400] bg-[#050505] text-[0px] text-[#F5B400] shadow-[0_0_18px_rgba(245,180,0,0.55)] transition hover:scale-105 lg:grid"
         aria-label="Open Megatron AI offer"
       >
         ✦
+        <Sparkles size={16} className="text-[#F5B400]" />
       </Link>
       <AnimatePresence>
         {categoryTransition && (
@@ -2750,6 +2774,192 @@ function ReelsApp() {
         {activeModal.type === "website" && <WebsiteModal onClose={closeOverlay} onAdmission={() => openOverlay("joinClass")} onContact={() => openOverlay("contact")} content={websiteContent} />}
         {activeModal.type === "joinClass" && <AdmissionModal onClose={closeOverlay} subcategories={courseSubcategories} />}
       </AnimatePresence>
+    </main>
+  );
+}
+
+function SalesFunnelPage() {
+  const { data: content } = useFirestoreDocument("salesFunnel", "main", defaultSalesFunnelContent);
+  const safeContent = { ...defaultSalesFunnelContent, ...(content || {}) };
+  const headlineLines = linesFrom(safeContent.mainHeadline);
+  const subheadlineLines = linesFrom(safeContent.subheadline);
+  const benefits = linesFrom(safeContent.courseBenefits);
+  const modules = linesFrom(safeContent.modules);
+  const trustIndicators = linesFrom(safeContent.trustIndicators);
+  const socialProof = linesFrom(safeContent.socialProof);
+  const ctaButtons = linesFrom(safeContent.ctaButtons);
+  const sectionImages = linesFrom(safeContent.sectionImages);
+  const socialLinks = linesFrom(safeContent.socialLinks);
+  const paymentLink = getValidatedPaymentUrl(safeContent.paymentLink);
+
+  usePageMeta({
+    title: safeContent.metaTitle || safeContent.pageTitle,
+    description: safeContent.metaDescription,
+    keywords: safeContent.metaKeywords,
+    image: safeContent.ogImage || safeContent.heroBannerImage,
+    path: "/offer",
+  });
+
+  const handleCta = (label) => {
+    const normalized = String(label || "").toUpperCase();
+    if (["INSTANT JOIN", "ENROLL NOW"].includes(normalized)) {
+      openPaymentLink(paymentLink, normalized);
+      return;
+    }
+    window.open(`https://wa.me/${safeContent.whatsappNumber || WHATSAPP_NUMBER}`, "_blank", "noopener,noreferrer");
+  };
+
+  return (
+    <main className="min-h-[100svh] bg-[#050505] text-white">
+      <section className="relative isolate min-h-[100svh] overflow-hidden px-4 pb-10 pt-4 sm:px-6 lg:px-10">
+        <img src={safeContent.heroBannerImage} alt="" className="absolute inset-0 -z-20 h-full w-full object-cover opacity-30" />
+        <div className="absolute inset-0 -z-10 bg-[linear-gradient(180deg,rgba(5,5,5,0.65)_0%,#050505_78%)]" />
+        <header className="mx-auto flex max-w-6xl items-center justify-between gap-3">
+          <Link to="/" className="inline-flex items-center gap-2 text-xs font-extrabold uppercase tracking-[0.18em] text-[#f8d879]">
+            <ChevronLeft size={16} />
+            Reels
+          </Link>
+          <BrandLogo className="h-9 w-24" />
+        </header>
+
+        <div className="mx-auto grid max-w-6xl gap-8 pt-8 lg:grid-cols-[1fr_0.78fr] lg:items-center lg:pt-14">
+          <div>
+            <div className="inline-flex items-center gap-2 rounded-full border border-[#f8d879]/60 bg-black/70 px-3 py-1.5 text-[11px] font-extrabold uppercase tracking-[0.18em] text-[#f8d879]">
+              <Sparkles size={14} />
+              {safeContent.badgeText}
+            </div>
+            <h1 className="mt-5 text-4xl font-black leading-[0.95] tracking-normal text-white sm:text-6xl lg:text-7xl">
+              {headlineLines.map((line) => (
+                <span key={line} className="block">{line}</span>
+              ))}
+            </h1>
+            <p className="mt-5 max-w-2xl text-base font-semibold leading-7 text-[#f7e7a5] sm:text-lg">
+              {subheadlineLines.map((line) => (
+                <span key={line} className="block">{line}</span>
+              ))}
+            </p>
+            <div className="mt-6 flex flex-wrap items-center gap-3">
+              <span className="rounded-full bg-[#f8d879] px-4 py-2 text-sm font-black text-black">{safeContent.offerBadge || safeContent.discountPercentage}</span>
+              <span className="text-sm font-bold text-white/60 line-through">{safeContent.oldPrice}</span>
+              <span className="text-3xl font-black text-[#f8d879]">{safeContent.offerPrice}</span>
+            </div>
+            <div className="mt-6 flex flex-wrap gap-3">
+              {["INSTANT JOIN", "ENROLL NOW"].map((label) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => openPaymentLink(paymentLink, label)}
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-[#f8d879] px-5 text-sm font-black text-black shadow-[0_0_28px_rgba(248,216,121,0.32)] transition active:scale-95"
+                >
+                  <Lock size={16} />
+                  {label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          <div className="overflow-hidden rounded-lg border border-[#f8d879]/40 bg-black/75 shadow-[0_0_42px_rgba(248,216,121,0.18)]">
+            <img src={safeContent.heroMockupImage || safeContent.heroBannerImage} alt={safeContent.courseName} className="h-72 w-full object-cover sm:h-96 lg:h-[31rem]" />
+            <div className="border-t border-[#f8d879]/30 p-4">
+              <p className="text-xl font-black text-[#f8d879]">{safeContent.courseName}</p>
+              <p className="mt-2 text-sm leading-6 text-white/78">{safeContent.courseDescription}</p>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="border-y border-[#f8d879]/20 bg-[#0b0b0b] px-4 py-8 sm:px-6 lg:px-10">
+        <div className="mx-auto grid max-w-6xl gap-4 sm:grid-cols-3">
+          {socialProof.map((item) => (
+            <div key={item} className="rounded-lg border border-[#f8d879]/30 bg-black p-4 text-center">
+              <p className="text-lg font-black text-[#f8d879]">{item}</p>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <section className="px-4 py-10 sm:px-6 lg:px-10">
+        <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-2">
+          <div className="rounded-lg border border-[#f8d879]/25 bg-[#0b0b0b] p-5">
+            <h2 className="text-2xl font-black text-[#f8d879]">What You Get</h2>
+            <div className="mt-5 grid gap-3">
+              {benefits.map((item) => (
+                <div key={item} className="flex items-center gap-3 rounded-md border border-[#f8d879]/15 bg-black px-3 py-3 text-sm font-bold">
+                  <CheckCircle2 size={17} className="text-[#f8d879]" />
+                  {item}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div className="rounded-lg border border-[#f8d879]/25 bg-[#0b0b0b] p-5">
+            <h2 className="text-2xl font-black text-[#f8d879]">Program Modules</h2>
+            <div className="mt-5 grid gap-3">
+              {modules.map((item, index) => (
+                <div key={item} className="flex items-center gap-3 rounded-md border border-[#f8d879]/15 bg-black px-3 py-3 text-sm font-bold">
+                  <span className="grid h-7 w-7 shrink-0 place-items-center rounded-full bg-[#f8d879] text-xs font-black text-black">{index + 1}</span>
+                  {item}
+                </div>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section className="px-4 pb-10 sm:px-6 lg:px-10">
+        <div className="mx-auto grid max-w-6xl gap-6 lg:grid-cols-[0.9fr_1.1fr]">
+          <div className="rounded-lg border border-[#f8d879]/25 bg-[#0b0b0b] p-5">
+            <div className="flex items-center gap-2 text-[#f8d879]">
+              <Play size={18} />
+              <h2 className="text-xl font-black">{safeContent.videoTitle}</h2>
+            </div>
+            <div className="mt-4 aspect-video overflow-hidden rounded-md border border-[#f8d879]/25 bg-black">
+              {getYoutubeEmbedUrl(safeContent.youtubeUrl) ? (
+                <iframe
+                  className="h-full w-full"
+                  src={getYoutubeEmbedUrl(safeContent.youtubeUrl)}
+                  title={safeContent.videoTitle}
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture"
+                  allowFullScreen
+                />
+              ) : (
+                <img src={sectionImages[0] || safeContent.heroBannerImage} alt="" className="h-full w-full object-cover" />
+              )}
+            </div>
+          </div>
+          <div className="rounded-lg border border-[#f8d879]/25 bg-[#0b0b0b] p-5">
+            <h2 className="text-xl font-black text-[#f8d879]">Secure Your Seat</h2>
+            <div className="mt-4 flex flex-wrap gap-2">
+              {trustIndicators.map((item) => (
+                <span key={item} className="rounded-full border border-[#f8d879]/30 px-3 py-1 text-xs font-bold text-[#f8d879]">{item}</span>
+              ))}
+            </div>
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              {ctaButtons.map((label) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() => handleCta(label)}
+                  className={`inline-flex h-12 items-center justify-center gap-2 rounded-md text-sm font-black transition active:scale-95 ${
+                    ["INSTANT JOIN", "ENROLL NOW"].includes(String(label).toUpperCase()) ? "bg-[#f8d879] text-black" : "border border-[#f8d879]/45 bg-black text-[#f8d879]"
+                  }`}
+                >
+                  {["INSTANT JOIN", "ENROLL NOW"].includes(String(label).toUpperCase()) ? <Lock size={16} /> : <Send size={16} />}
+                  {label}
+                </button>
+              ))}
+            </div>
+            <div className="mt-6 grid gap-2 text-sm font-semibold text-white/75">
+              <a href={`tel:${safeContent.phoneNumber || PHONE_NUMBER}`} className="inline-flex items-center gap-2"><Phone size={15} /> {safeContent.phoneNumber || PHONE_NUMBER}</a>
+              <a href={`mailto:${safeContent.emailAddress}`} className="inline-flex items-center gap-2"><Mail size={15} /> {safeContent.emailAddress}</a>
+              {socialLinks.map((link) => (
+                <a key={link} href={link.includes("http") ? link.slice(link.indexOf("http")) : "#"} target="_blank" rel="noreferrer" className="text-[#f8d879] underline underline-offset-4">
+                  {link}
+                </a>
+              ))}
+            </div>
+          </div>
+        </div>
+      </section>
     </main>
   );
 }
@@ -2925,6 +3135,7 @@ function AdminDashboard() {
   const { items: admissions } = useFirestoreCollection("admissions", []);
   const { items: liveChats } = useFirestoreCollection("liveChats", []);
   const { items: websiteContentItems } = useFirestoreCollection("websiteContent", defaultWebsiteContentItems);
+  const { data: salesFunnelContent } = useFirestoreDocument("salesFunnel", "main", defaultSalesFunnelContent);
   const { data: playbackSettings } = useFirestoreDocument("settings", "playback", defaultPlaybackSettings);
   const [activeAdminSection, setActiveAdminSection] = React.useState("reels");
   const [selectedCategory, setSelectedCategory] = React.useState("all");
@@ -2962,6 +3173,7 @@ function AdminDashboard() {
     ...defaultWebsiteContent,
     gallery: defaultWebsiteContent.gallery.join("\n"),
   });
+  const [salesFunnelForm, setSalesFunnelForm] = React.useState(defaultSalesFunnelContent);
 
   const categories = React.useMemo(() => mergeCategories(savedCategories), [savedCategories]);
   const courseSubcategories = React.useMemo(() => mergeSubcategories(savedSubcategories), [savedSubcategories]);
@@ -2987,6 +3199,7 @@ function AdminDashboard() {
   const adminSections = [
     { id: "reels", label: "Reels Management", icon: FileVideo },
     { id: "website", label: "Website Content", icon: Globe2 },
+    { id: "sales-funnel", label: "Sales Funnel Manager", icon: Sparkles },
     { id: "admissions", label: "Join Class Admissions", icon: GraduationCap },
     { id: "applicants", label: "Job Applicants", icon: Users },
     { id: "companies", label: "Hiring Companies", icon: BriefcaseBusiness },
@@ -3005,6 +3218,15 @@ function AdminDashboard() {
       socialLinks: websiteContent.socialLinks || defaultWebsiteContent.socialLinks,
     });
   }, [websiteContent]);
+
+  React.useEffect(() => {
+    setSalesFunnelForm({
+      ...defaultSalesFunnelContent,
+      ...salesFunnelContent,
+      paymentLink: salesFunnelContent.paymentLink || SALES_FUNNEL_PAYMENT_URL,
+      socialLinks: salesFunnelContent.socialLinks || defaultSalesFunnelContent.socialLinks,
+    });
+  }, [salesFunnelContent]);
 
   React.useEffect(() => {
     if (liveChatUnreadCount > previousLiveChatUnreadRef.current && previousLiveChatUnreadRef.current !== 0) {
@@ -3468,6 +3690,7 @@ function AdminDashboard() {
   };
 
   const updateWebsiteField = (field, value) => setWebsiteForm((form) => ({ ...form, [field]: value }));
+  const updateSalesFunnelField = (field, value) => setSalesFunnelForm((form) => ({ ...form, [field]: value }));
 
   const saveWebsiteContent = async (event) => {
     event.preventDefault();
@@ -3487,6 +3710,24 @@ function AdminDashboard() {
     };
     await setDoc(doc(db, "websiteContent", "main"), payload, { merge: true });
     setStatus("Website content updated.");
+  };
+
+  const saveSalesFunnelContent = async (event) => {
+    event.preventDefault();
+    if (!db) {
+      setStatus("Connect Firestore to save sales funnel content.");
+      return;
+    }
+    const payload = {
+      ...defaultSalesFunnelContent,
+      ...salesFunnelForm,
+      id: "main",
+      paymentLink: salesFunnelForm.paymentLink || SALES_FUNNEL_PAYMENT_URL,
+      updatedAt: serverTimestamp(),
+      createdAt: salesFunnelContent.createdAt || serverTimestamp(),
+    };
+    await setDoc(doc(db, "salesFunnel", "main"), payload, { merge: true });
+    setStatus("Sales funnel content updated.");
   };
 
   const handleLogout = async () => {
@@ -4015,6 +4256,76 @@ function AdminDashboard() {
           </section>
         )}
 
+        {activeAdminSection === "sales-funnel" && (
+          <section className="mt-5 grid gap-5 lg:grid-cols-[1fr_0.85fr]">
+            <form onSubmit={saveSalesFunnelContent} className="rounded-lg border border-[#f8d879]/50 bg-[#0b0b0b] p-4 shadow-[0_0_32px_rgba(248,216,121,0.16)]">
+              <div className="flex items-center justify-between">
+                <div>
+                  <h2 className="text-base font-bold text-[#f8d879]">Sales Funnel Manager</h2>
+                  <p className="mt-1 text-xs text-white">Edit the AI Learning Program offer page.</p>
+                </div>
+                <Sparkles size={20} className="text-[#f8d879]" />
+              </div>
+              <div className="mt-5 grid gap-3">
+                <FormField label="Course Name" value={salesFunnelForm.courseName} onChange={(value) => updateSalesFunnelField("courseName", value)} required />
+                <FormField label="Main Headline" value={salesFunnelForm.mainHeadline} onChange={(value) => updateSalesFunnelField("mainHeadline", value)} textarea required />
+                <FormField label="Subheadline" value={salesFunnelForm.subheadline} onChange={(value) => updateSalesFunnelField("subheadline", value)} textarea />
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <FormField label="Original Price" value={salesFunnelForm.oldPrice} onChange={(value) => updateSalesFunnelField("oldPrice", value)} />
+                  <FormField label="Offer Price" value={salesFunnelForm.offerPrice} onChange={(value) => updateSalesFunnelField("offerPrice", value)} />
+                  <FormField label="Discount Badge" value={salesFunnelForm.offerBadge} onChange={(value) => updateSalesFunnelField("offerBadge", value)} />
+                </div>
+                <FormField label="Banner Image" value={salesFunnelForm.heroBannerImage} onChange={(value) => updateSalesFunnelField("heroBannerImage", value)} type="url" />
+                <FormField label="Hero Image" value={salesFunnelForm.heroMockupImage} onChange={(value) => updateSalesFunnelField("heroMockupImage", value)} type="url" />
+                <FormField label="YouTube URL" value={salesFunnelForm.youtubeUrl} onChange={(value) => updateSalesFunnelField("youtubeUrl", value)} type="url" />
+                <FormField label="Payment URL" value={salesFunnelForm.paymentLink} onChange={(value) => updateSalesFunnelField("paymentLink", value)} type="url" />
+                {salesFunnelPaymentUrlIsInvalid && (
+                  <div className="rounded-md border border-amber-300 bg-amber-100 px-3 py-2 text-xs font-bold leading-5 text-amber-950">
+                    Payment URL must start with https://rzp.io/ or https://pages.razorpay.com/. The offer page will use the default Razorpay link until this is fixed.
+                  </div>
+                )}
+                <FormField label="CTA Text" value={salesFunnelForm.ctaButtons} onChange={(value) => updateSalesFunnelField("ctaButtons", value)} textarea />
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <FormField label="Phone Number" value={salesFunnelForm.phoneNumber} onChange={(value) => updateSalesFunnelField("phoneNumber", value)} type="tel" />
+                  <FormField label="WhatsApp Number" value={salesFunnelForm.whatsappNumber} onChange={(value) => updateSalesFunnelField("whatsappNumber", value)} type="tel" />
+                  <FormField label="Email Address" value={salesFunnelForm.emailAddress} onChange={(value) => updateSalesFunnelField("emailAddress", value)} type="email" />
+                </div>
+                <FormField label="SEO Title" value={salesFunnelForm.metaTitle} onChange={(value) => updateSalesFunnelField("metaTitle", value)} />
+                <FormField label="SEO Description" value={salesFunnelForm.metaDescription} onChange={(value) => updateSalesFunnelField("metaDescription", value)} textarea />
+                <FormField label="Social Links" value={salesFunnelForm.socialLinks} onChange={(value) => updateSalesFunnelField("socialLinks", value)} textarea />
+                <button className="flex h-11 items-center justify-center gap-2 rounded-md bg-[#f8d879] text-sm font-black text-black transition active:scale-95">
+                  <Save size={17} />
+                  Save Sales Funnel
+                </button>
+              </div>
+            </form>
+
+            <div className="rounded-lg border border-[#f8d879]/40 bg-[#0b0b0b] p-4 shadow-[0_0_32px_rgba(248,216,121,0.12)]">
+              <h2 className="text-base font-bold text-[#f8d879]">Live Preview</h2>
+              <div className="mt-4 overflow-hidden rounded-lg border border-[#f8d879]/30 bg-black">
+                <img
+                  className="h-48 w-full object-cover"
+                  src={salesFunnelForm.heroMockupImage || salesFunnelForm.heroBannerImage}
+                  alt="Sales funnel preview"
+                />
+                <div className="p-4">
+                  <p className="text-[11px] font-extrabold uppercase tracking-[0.18em] text-[#f8d879]">{salesFunnelForm.badgeText}</p>
+                  <p className="mt-2 whitespace-pre-line text-2xl font-black leading-tight text-white">{salesFunnelForm.mainHeadline}</p>
+                  <p className="mt-2 text-sm font-semibold leading-6 text-[#f7e7a5]">{salesFunnelForm.subheadline}</p>
+                  <div className="mt-4 flex flex-wrap items-center gap-2">
+                    <span className="rounded-full bg-[#f8d879] px-3 py-1 text-xs font-black text-black">{salesFunnelForm.offerBadge}</span>
+                    <span className="text-xs font-bold text-white/55 line-through">{salesFunnelForm.oldPrice}</span>
+                    <span className="text-xl font-black text-[#f8d879]">{salesFunnelForm.offerPrice}</span>
+                  </div>
+                  <Link to="/offer" className="mt-4 inline-flex h-10 items-center justify-center rounded-md border border-[#f8d879]/50 px-4 text-xs font-black text-[#f8d879]">
+                    Open /offer
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
         {activeAdminSection === "admissions" && (
           <AdminListSection
             title="Join Class Admissions"
@@ -4523,6 +4834,7 @@ function App() {
       <AuthProvider>
         <Routes>
           <Route path="/" element={<ReelsApp />} />
+          <Route path="/offer" element={<SalesFunnelPage />} />
           <Route path="/privacypolicy" element={<PrivacyPolicy />} />
           <Route path="/admin-login" element={<AdminLogin />} />
           <Route
