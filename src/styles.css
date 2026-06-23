@@ -41,3 +41,17 @@ a {
   -webkit-box-orient: vertical;
   -webkit-line-clamp: 2;
 }
+
+.banner-marquee {
+  animation: banner-scroll 28s linear infinite;
+}
+
+@keyframes banner-scroll {
+  from {
+    transform: translateX(0);
+  }
+
+  to {
+    transform: translateX(-50%);
+  }
+}

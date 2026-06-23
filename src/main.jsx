@@ -7,6 +7,7 @@ import {
   collection,
   deleteDoc,
   doc,
+  getDoc,
   onSnapshot,
   orderBy,
   query,
@@ -259,6 +260,111 @@ const defaultSalesFunnelContent = {
   ogImage: "https://images.unsplash.com/photo-1677442136019-21780ecad995?auto=format&fit=crop&w=1200&q=85",
 };
 
+const defaultFaqs = [
+  {
+    id: "faq-courses",
+    question: "Which courses does Megatron offer?",
+    answer: "Megatron offers Animation, VFX, Graphic Design, Video Editing, Digital Marketing, UI/UX Design, AR/VR, Web Design, and multimedia career programs.",
+    category: "Courses",
+    orderIndex: 10,
+    active: true,
+  },
+  {
+    id: "faq-admissions",
+    question: "How can I join a course?",
+    answer: "You can submit the Join Class form, call the institute, or contact Megatron on WhatsApp for course counseling and batch details.",
+    category: "Admissions",
+    orderIndex: 20,
+    active: true,
+  },
+  {
+    id: "faq-placement",
+    question: "Does Megatron provide placement support?",
+    answer: "Yes. Megatron supports students with portfolio guidance, resume preparation, interview readiness, and creative career opportunities.",
+    category: "Careers",
+    orderIndex: 30,
+    active: true,
+  },
+];
+
+const defaultSeoContent = {
+  id: "main",
+  seoTitle: DEFAULT_SEO_TITLE,
+  seoDescription: DEFAULT_SEO_DESCRIPTION,
+  seoKeywords: DEFAULT_SEO_KEYWORDS.join(", "),
+  aiSearchSummary:
+    "Megatron College of Multimedia in Pune provides practical creative career training in Animation, VFX, Graphic Design, Video Editing, Digital Marketing, UI/UX, AR/VR, Web Design, and multimedia production.",
+  answerEngineSummary:
+    "Megatron is a Pune-based multimedia institute for students who want job-oriented creative skills, portfolio projects, counseling, placement support, and hands-on training after school, college, or career transition.",
+  authorName: "Megatron College of Multimedia",
+  instituteExperience: "Megatron trains creative students with practical classroom guidance, portfolio-focused assignments, career counseling, and multimedia production exposure.",
+  trustBadges: "Practical Training\nPortfolio Projects\nCareer Counseling\nPlacement Assistance\nIndustry-Focused Courses",
+  placementHighlights: "Resume guidance\nInterview preparation\nCreative job updates\nPortfolio review\nHiring partner connections",
+  courseWhat: "Creative career courses covering design, animation, VFX, editing, marketing, UI/UX, immersive media, and web production.",
+  whoShouldJoin: "Students after 10th, 12th, graduates, working professionals, business owners, and creators who want practical multimedia and digital skills.",
+  careerOpportunities: "Animator, VFX artist, graphic designer, video editor, motion graphics artist, digital marketer, UI/UX designer, web designer, and multimedia specialist.",
+  duration: "Course duration depends on the selected program, batch format, and learning path.",
+  fees: "Fees vary by course and batch. Contact Megatron for the latest fee structure and offers.",
+  admissionProcess: "Submit an inquiry, speak with a counselor, choose a course and batch, complete admission formalities, and start training.",
+};
+
+const defaultBranding = {
+  id: "main",
+  mainLogo: BRAND_LOGO_SRC,
+  mobileLogo: BRAND_LOGO_SRC,
+  desktopSidebarLogo: BRAND_LOGO_SRC,
+  adminLogo: BRAND_LOGO_SRC,
+  salesFunnelLogo: BRAND_LOGO_SRC,
+  footerLogo: BRAND_LOGO_SRC,
+  favicon: BRAND_LOGO_SRC,
+};
+
+const defaultHeaderBanners = [
+  {
+    id: "default-banner",
+    title: "Megatron College of Multimedia",
+    imageUrl: "https://images.unsplash.com/photo-1492691527719-9d1e07e534b4?auto=format&fit=crop&w=1400&q=80",
+    linkUrl: "",
+    orderIndex: 10,
+    active: true,
+  },
+];
+
+const ADMIN_ROLES = {
+  SUPER: "super-admin",
+  AGENT: "agent",
+};
+const AGENT_PERMISSIONS = ["live-chat", "messages", "admissions", "applicants", "companies"];
+const SUPER_ADMIN_PERMISSIONS = [
+  "reels",
+  "website",
+  "branding",
+  "banners",
+  "sales-funnel",
+  "seo",
+  "faqs",
+  "brochures",
+  "admissions",
+  "applicants",
+  "companies",
+  "live-chat",
+  "messages",
+  "categories",
+  "analytics",
+  "admin-users",
+];
+
+function normalizeRole(value = "") {
+  const normalized = String(value || "").toLowerCase();
+  return normalized === ADMIN_ROLES.SUPER || normalized === "super admin" ? ADMIN_ROLES.SUPER : ADMIN_ROLES.AGENT;
+}
+
+function getAdminPermissions(profile) {
+  if (normalizeRole(profile?.role) === ADMIN_ROLES.SUPER) return SUPER_ADMIN_PERMISSIONS;
+  const permissions = Array.isArray(profile?.permissions) ? profile.permissions : AGENT_PERMISSIONS;
+  return permissions.filter((permission) => AGENT_PERMISSIONS.includes(permission));
+}
+
 function isAllowedRazorpayUrl(value = "") {
   const trimmed = String(value || "").trim();
   if (!trimmed) return false;
@@ -507,6 +613,47 @@ function formatNumber(value = 0) {
   return String(value);
 }
 
+function getRecordDate(value) {
+  if (!value) return null;
+  if (value?.toDate) return value.toDate();
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? null : parsed;
+}
+
+function formatKolkataDateTime(value) {
+  const date = getRecordDate(value);
+  if (!date) return { date: "Not recorded", time: "Not recorded", full: "Not recorded", relative: "Not recorded" };
+  const formatterOptions = { timeZone: "Asia/Kolkata" };
+  const diffMs = Date.now() - date.getTime();
+  const diffMinutes = Math.max(0, Math.floor(diffMs / 60000));
+  const relative =
+    diffMinutes < 1
+      ? "Just now"
+      : diffMinutes < 60
+        ? `${diffMinutes} min ago`
+        : diffMinutes < 1440
+          ? `${Math.floor(diffMinutes / 60)} hr ago`
+          : `${Math.floor(diffMinutes / 1440)} days ago`;
+  return {
+    date: date.toLocaleDateString("en-IN", formatterOptions),
+    time: date.toLocaleTimeString("en-IN", { ...formatterOptions, hour: "2-digit", minute: "2-digit" }),
+    full: date.toLocaleString("en-IN", { ...formatterOptions, dateStyle: "medium", timeStyle: "short" }),
+    relative,
+  };
+}
+
+function AdminDateTime({ value }) {
+  const details = formatKolkataDateTime(value);
+  return (
+    <div className="mt-3 grid gap-1 rounded-md border border-blue-200 bg-[#063b91] p-3 text-[11px] font-semibold text-white sm:grid-cols-2">
+      <span>Date: {details.date}</span>
+      <span>Time: {details.time}</span>
+      <span>Full: {details.full}</span>
+      <span>Relative: {details.relative}</span>
+    </div>
+  );
+}
+
 function openDirectUrl(url) {
   window.location.href = url;
 }
@@ -517,6 +664,19 @@ function getWhatsAppUrl(message = WHATSAPP_INFO_MESSAGE) {
 
 function startPhoneCall() {
   window.location.href = `tel:${PHONE_NUMBER}`;
+}
+
+function useDynamicFavicon(branding) {
+  React.useEffect(() => {
+    const href = branding?.favicon || BRAND_LOGO_SRC;
+    let icon = document.head.querySelector('link[rel="icon"]');
+    if (!icon) {
+      icon = document.createElement("link");
+      icon.rel = "icon";
+      document.head.appendChild(icon);
+    }
+    icon.href = href;
+  }, [branding]);
 }
 
 function getAbsoluteUrl(path = "/") {
@@ -564,9 +724,25 @@ function buildSeoForReel(reel, categoryId, subcategoryId) {
   return { title, description, keywords: Array.from(new Set(keywords)).join(", ") };
 }
 
-function buildSchema({ reel, categoryId, subcategoryId, url, image }) {
+function buildSchema({ reel, categoryId, subcategoryId, url, image, seoContent = defaultSeoContent, faqs = defaultFaqs }) {
+  const safeSeo = { ...defaultSeoContent, ...(seoContent || {}) };
   const categoryLabel = defaultCategories.find((category) => category.id === categoryId)?.label || "Reels";
   const subcategoryLabel = defaultCourseSubcategories.find((subcategory) => subcategory.id === subcategoryId)?.label;
+  const faqEntities = sortByOrder(faqs)
+    .filter((faq) => faq.active !== false)
+    .slice(0, 12)
+    .map((faq) => ({
+      "@type": "Question",
+      name: faq.question,
+      acceptedAnswer: { "@type": "Answer", text: faq.answer },
+    }));
+  const contactPoint = {
+    "@type": "ContactPoint",
+    telephone: `+91${PHONE_NUMBER}`,
+    contactType: "admissions and course counseling",
+    areaServed: "IN",
+    availableLanguage: ["English", "Hindi", "Marathi"],
+  };
   const schemas = [
     {
       "@context": "https://schema.org",
@@ -576,6 +752,11 @@ function buildSchema({ reel, categoryId, subcategoryId, url, image }) {
       url,
       logo: toAbsoluteUrl(BRAND_LOGO_SRC),
       telephone: PHONE_NUMBER,
+      description: safeSeo.aiSearchSummary,
+      founder: safeSeo.authorName,
+      knowsAbout: linesFrom(safeSeo.seoKeywords),
+      award: linesFrom(safeSeo.trustBadges),
+      contactPoint,
       address: {
         "@type": "PostalAddress",
         streetAddress: "KK Market, Satra Road",
@@ -591,6 +772,8 @@ function buildSchema({ reel, categoryId, subcategoryId, url, image }) {
       name: BRAND_FULL_NAME,
       image,
       telephone: PHONE_NUMBER,
+      description: safeSeo.answerEngineSummary,
+      priceRange: safeSeo.fees,
       address: {
         "@type": "PostalAddress",
         streetAddress: "KK Market, Satra Road",
@@ -607,29 +790,46 @@ function buildSchema({ reel, categoryId, subcategoryId, url, image }) {
       name: BRAND_FULL_NAME,
       url,
       logo: toAbsoluteUrl(BRAND_LOGO_SRC),
+      description: safeSeo.aiSearchSummary,
+      contactPoint,
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "WebSite",
+      name: BRAND_FULL_NAME,
+      url,
+      description: safeSeo.answerEngineSummary,
+      publisher: { "@type": "Organization", name: BRAND_FULL_NAME, logo: toAbsoluteUrl(BRAND_LOGO_SRC) },
+      potentialAction: {
+        "@type": "SearchAction",
+        target: `${url}?q={search_term_string}`,
+        "query-input": "required name=search_term_string",
+      },
+    },
+    {
+      "@context": "https://schema.org",
+      "@type": "ContactPoint",
+      ...contactPoint,
     },
     {
       "@context": "https://schema.org",
       "@type": "Course",
       name: subcategoryLabel ? `${subcategoryLabel} Course in Pune` : "Animation, VFX, Design and Multimedia Courses in Pune",
-      description: "Professional creative career courses with practical training and placement assistance at Megatron College of Multimedia Pune.",
+      description: safeSeo.courseWhat,
+      educationalCredentialAwarded: "Certificate",
+      timeRequired: safeSeo.duration,
+      offers: { "@type": "Offer", price: safeSeo.fees, priceCurrency: "INR", availability: "https://schema.org/InStock" },
+      occupationalCredentialAwarded: safeSeo.careerOpportunities,
       provider: { "@type": "EducationalOrganization", name: BRAND_FULL_NAME, sameAs: url },
     },
     {
       "@context": "https://schema.org",
       "@type": "FAQPage",
-      mainEntity: [
-        {
-          "@type": "Question",
-          name: "Where is Megatron College of Multimedia located?",
-          acceptedAnswer: { "@type": "Answer", text: "Megatron College of Multimedia is located at KK Market, Satra Road, Pune." },
-        },
-        {
-          "@type": "Question",
-          name: "Which courses does Megatron offer?",
-          acceptedAnswer: { "@type": "Answer", text: "Megatron offers Animation, VFX, Graphic Design, Video Editing, Digital Marketing, UI/UX, Web Design, AR/VR, and multimedia courses." },
-        },
-      ],
+      mainEntity: faqEntities.length ? faqEntities : defaultFaqs.map((faq) => ({
+        "@type": "Question",
+        name: faq.question,
+        acceptedAnswer: { "@type": "Answer", text: faq.answer },
+      })),
     },
     {
       "@context": "https://schema.org",
@@ -658,9 +858,17 @@ function buildSchema({ reel, categoryId, subcategoryId, url, image }) {
   return schemas;
 }
 
-function useSeo({ activeCategory, activeSubcategory, activeReel }) {
+function useSeo({ activeCategory, activeSubcategory, activeReel, seoContent = defaultSeoContent, faqs = defaultFaqs }) {
   React.useEffect(() => {
-    const seo = buildSeoForReel(activeReel, activeCategory, activeSubcategory);
+    const adminSeo = { ...defaultSeoContent, ...(seoContent || {}) };
+    const reelSeo = buildSeoForReel(activeReel, activeCategory, activeSubcategory);
+    const seo = activeReel
+      ? reelSeo
+      : {
+          title: adminSeo.seoTitle || reelSeo.title,
+          description: adminSeo.seoDescription || reelSeo.description,
+          keywords: adminSeo.seoKeywords || reelSeo.keywords,
+        };
     const canonicalPath = `/?category=${encodeURIComponent(activeCategory || "testimonials")}${activeReel?.id ? `&reel=${encodeURIComponent(activeReel.id)}` : ""}`;
     const canonicalUrl = getAbsoluteUrl(canonicalPath);
     const imageUrl = toAbsoluteUrl(activeReel?.thumbnail || activeReel?.poster || BRAND_LOGO_SRC);
@@ -670,6 +878,7 @@ function useSeo({ activeCategory, activeSubcategory, activeReel }) {
     upsertMeta('meta[name="description"]', { name: "description", content: seo.description });
     upsertMeta('meta[name="keywords"]', { name: "keywords", content: seo.keywords });
     upsertMeta('meta[name="robots"]', { name: "robots", content: "index, follow" });
+    upsertMeta('meta[name="author"]', { name: "author", content: adminSeo.authorName });
     upsertMeta('link[rel="canonical"]', { rel: "canonical", href: canonicalUrl });
     upsertMeta('meta[property="og:type"]', { property: "og:type", content: activeMediaType === "video" || activeMediaType === "youtube" ? "video.other" : "website" });
     upsertMeta('meta[property="og:site_name"]', { property: "og:site_name", content: BRAND_FULL_NAME });
@@ -681,6 +890,7 @@ function useSeo({ activeCategory, activeSubcategory, activeReel }) {
     upsertMeta('meta[name="twitter:title"]', { name: "twitter:title", content: seo.title });
     upsertMeta('meta[name="twitter:description"]', { name: "twitter:description", content: seo.description });
     upsertMeta('meta[name="twitter:image"]', { name: "twitter:image", content: imageUrl });
+    upsertMeta('meta[name="twitter:site"]', { name: "twitter:site", content: BRAND_FULL_NAME });
 
     let schemaScript = document.head.querySelector("#megatron-jsonld");
     if (!schemaScript) {
@@ -689,14 +899,16 @@ function useSeo({ activeCategory, activeSubcategory, activeReel }) {
       schemaScript.type = "application/ld+json";
       document.head.appendChild(schemaScript);
     }
-    schemaScript.textContent = JSON.stringify(buildSchema({ reel: activeReel, categoryId: activeCategory, subcategoryId: activeSubcategory, url: getAbsoluteUrl("/"), image: imageUrl }));
-  }, [activeCategory, activeSubcategory, activeReel]);
+    schemaScript.textContent = JSON.stringify(buildSchema({ reel: activeReel, categoryId: activeCategory, subcategoryId: activeSubcategory, url: getAbsoluteUrl("/"), image: imageUrl, seoContent: adminSeo, faqs }));
+  }, [activeCategory, activeSubcategory, activeReel, seoContent, faqs]);
 }
 
-function BrandLogo({ className = "h-10 w-auto", withText = false, stacked = false }) {
+function BrandLogo({ className = "h-10 w-auto", withText = false, stacked = false, variant = "mainLogo" }) {
+  const { data: branding } = useFirestoreDocument("branding", "main", defaultBranding);
+  const logoSrc = branding?.[variant] || branding?.mainLogo || BRAND_LOGO_SRC;
   return (
     <div className={`flex ${stacked ? "flex-col text-center" : "items-center"} gap-2`}>
-      <img src={BRAND_LOGO_SRC} alt="Megatron Logo" className={`${className} object-contain`} loading="eager" decoding="async" />
+      <img src={logoSrc} alt="Megatron Logo" className={`${className} object-contain`} loading="eager" decoding="async" />
       {withText && (
         <div>
           <p className="text-sm font-extrabold leading-none text-white">{BRAND_NAME}</p>
@@ -788,29 +1000,25 @@ function linesFrom(value) {
     .filter(Boolean);
 }
 
-function usePageMeta({ title, description, keywords, image, path = "/offer" }) {
+function usePageMeta({ title, description, keywords, image, path = "/offer", author = defaultSeoContent.authorName }) {
   React.useEffect(() => {
     const canonicalUrl = getAbsoluteUrl(path);
-    const upsertMeta = (selector, attributes) => {
-      let element = document.head.querySelector(selector);
-      if (!element) {
-        element = document.createElement("meta");
-        document.head.appendChild(element);
-      }
-      Object.entries(attributes).forEach(([key, value]) => element.setAttribute(key, value));
-    };
     document.title = title;
     upsertMeta('meta[name="description"]', { name: "description", content: description });
     upsertMeta('meta[name="keywords"]', { name: "keywords", content: keywords });
+    upsertMeta('meta[name="robots"]', { name: "robots", content: "index, follow" });
+    upsertMeta('meta[name="author"]', { name: "author", content: author });
+    upsertMeta('link[rel="canonical"]', { rel: "canonical", href: canonicalUrl });
     upsertMeta('meta[property="og:title"]', { property: "og:title", content: title });
     upsertMeta('meta[property="og:description"]', { property: "og:description", content: description });
     upsertMeta('meta[property="og:url"]', { property: "og:url", content: canonicalUrl });
-    upsertMeta('meta[property="og:image"]', { property: "og:image", content: image });
+    upsertMeta('meta[property="og:image"]', { property: "og:image", content: toAbsoluteUrl(image) });
     upsertMeta('meta[property="og:type"]', { property: "og:type", content: "website" });
     upsertMeta('meta[name="twitter:card"]', { name: "twitter:card", content: "summary_large_image" });
     upsertMeta('meta[name="twitter:title"]', { name: "twitter:title", content: title });
     upsertMeta('meta[name="twitter:description"]', { name: "twitter:description", content: description });
-    upsertMeta('meta[name="twitter:image"]', { name: "twitter:image", content: image });
+    upsertMeta('meta[name="twitter:image"]', { name: "twitter:image", content: toAbsoluteUrl(image) });
+    upsertMeta('meta[name="twitter:site"]', { name: "twitter:site", content: BRAND_FULL_NAME });
 
     let canonical = document.head.querySelector('link[rel="canonical"]');
     if (!canonical) {
@@ -819,7 +1027,7 @@ function usePageMeta({ title, description, keywords, image, path = "/offer" }) {
       document.head.appendChild(canonical);
     }
     canonical.href = canonicalUrl;
-  }, [description, image, keywords, path, title]);
+  }, [author, description, image, keywords, path, title]);
 }
 
 async function trackSalesFunnelClick(buttonName) {
@@ -851,24 +1059,76 @@ function openPaymentLink(paymentLink, buttonName) {
 const AuthContext = React.createContext(null);
 
 function AuthProvider({ children }) {
-  const [authState, setAuthState] = React.useState({ user: null, isAdmin: false, loading: true });
+  const [authState, setAuthState] = React.useState({ user: null, isAdmin: false, adminProfile: null, permissions: [], loading: true });
 
   React.useEffect(() => {
     if (!auth) {
-      setAuthState({ user: null, isAdmin: false, loading: false });
+      setAuthState({ user: null, isAdmin: false, adminProfile: null, permissions: [], loading: false });
       return undefined;
     }
 
     const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      const isAdmin = user?.email?.toLowerCase() === ADMIN_EMAIL;
-
-      if (user && !isAdmin) {
-        await signOut(auth);
-        setAuthState({ user: null, isAdmin: false, loading: false });
+      if (!user) {
+        setAuthState({ user: null, isAdmin: false, adminProfile: null, permissions: [], loading: false });
         return;
       }
 
-      setAuthState({ user, isAdmin, loading: false });
+      const isHardcodedSuperAdmin = user.email?.toLowerCase() === ADMIN_EMAIL;
+      let adminProfile = isHardcodedSuperAdmin
+        ? { uid: user.uid, email: user.email, role: ADMIN_ROLES.SUPER, permissions: SUPER_ADMIN_PERMISSIONS, status: "active" }
+        : null;
+
+      if (db) {
+        try {
+          const adminSnapshot = await getDoc(doc(db, "adminUsers", user.uid));
+          if (adminSnapshot.exists()) {
+            adminProfile = { uid: user.uid, ...adminSnapshot.data() };
+          }
+          if (isHardcodedSuperAdmin) {
+            await setDoc(
+              doc(db, "adminUsers", user.uid),
+              {
+                email: user.email,
+                role: ADMIN_ROLES.SUPER,
+                permissions: SUPER_ADMIN_PERMISSIONS,
+                status: "active",
+                lastLoginAt: serverTimestamp(),
+                updatedAt: serverTimestamp(),
+                createdAt: serverTimestamp(),
+              },
+              { merge: true },
+            );
+          } else if (adminProfile?.status === "active") {
+            await updateDoc(doc(db, "adminUsers", user.uid), { lastLoginAt: serverTimestamp(), updatedAt: serverTimestamp() });
+          }
+          if (adminProfile) {
+            await addDoc(collection(db, "adminActivityLogs"), {
+              uid: user.uid,
+              email: user.email,
+              action: "login",
+              createdAt: serverTimestamp(),
+            });
+          }
+        } catch {
+          adminProfile = isHardcodedSuperAdmin ? adminProfile : null;
+        }
+      }
+
+      if (isHardcodedSuperAdmin) {
+        adminProfile = { uid: user.uid, email: user.email, role: ADMIN_ROLES.SUPER, permissions: SUPER_ADMIN_PERMISSIONS, status: "active" };
+      }
+
+      const role = normalizeRole(adminProfile?.role);
+      const isAdmin = Boolean(adminProfile && adminProfile.status !== "disabled");
+
+      if (!isAdmin) {
+        await signOut(auth);
+        setAuthState({ user: null, isAdmin: false, adminProfile: null, permissions: [], loading: false });
+        return;
+      }
+
+      const normalizedProfile = { ...adminProfile, role, uid: user.uid, email: adminProfile.email || user.email };
+      setAuthState({ user, isAdmin, adminProfile: normalizedProfile, permissions: getAdminPermissions(normalizedProfile), loading: false });
     });
 
     return unsubscribe;
@@ -880,7 +1140,14 @@ function AuthProvider({ children }) {
     await keepAdminSession();
     const credential = await signInWithEmailAndPassword(auth, email.trim(), password);
 
-    if (credential.user?.email?.toLowerCase() !== ADMIN_EMAIL) {
+    const isHardcodedSuperAdmin = credential.user?.email?.toLowerCase() === ADMIN_EMAIL;
+    if (!isHardcodedSuperAdmin && db) {
+      const adminSnapshot = await getDoc(doc(db, "adminUsers", credential.user.uid));
+      if (!adminSnapshot.exists() || adminSnapshot.data()?.status === "disabled") {
+        await signOut(auth);
+        throw new Error("This account is not authorized for the admin dashboard.");
+      }
+    } else if (!isHardcodedSuperAdmin && !db) {
       await signOut(auth);
       throw new Error("This account is not authorized for the admin dashboard.");
     }
@@ -1567,7 +1834,7 @@ function AdmissionModal({ onClose, subcategories }) {
   );
 }
 
-function WebsiteModal({ onClose, onAdmission, onContact, content }) {
+function WebsiteModal({ onClose, onAdmission, onContact, onDownloadBrochure, content }) {
   const safeContent = { ...defaultWebsiteContent, ...(content || {}) };
   const gallery = (Array.isArray(safeContent.gallery) ? safeContent.gallery : String(safeContent.gallery || "").split("\n")).map((item) => String(item).trim()).filter(Boolean);
   const featuredCourses = String(safeContent.featuredCourses || "").split("\n").map((item) => item.trim()).filter(Boolean);
@@ -1659,10 +1926,18 @@ function WebsiteModal({ onClose, onAdmission, onContact, content }) {
             })}
           </div>
         </section>
-        <div className="grid grid-cols-3 gap-3 lg:max-w-2xl">
+        <div className="grid gap-3 sm:grid-cols-2 lg:max-w-3xl lg:grid-cols-5">
           <button type="button" onClick={onAdmission} className="flex h-12 items-center justify-center gap-2 rounded-md bg-[#1877f2] text-sm font-bold text-white">
             <GraduationCap size={17} />
             {safeContent.admissionCta}
+          </button>
+          <Link to="/faqs" className="flex h-12 items-center justify-center gap-2 rounded-md border border-blue-200 bg-[#0b4fb3] text-sm font-bold text-white">
+            <BookOpen size={17} />
+            FAQ
+          </Link>
+          <button type="button" onClick={onDownloadBrochure} className="flex h-12 items-center justify-center gap-2 rounded-md border border-blue-200 bg-[#0b4fb3] text-sm font-bold text-white">
+            <Download size={17} />
+            Brochure
           </button>
           <button type="button" onClick={onContact} className="flex h-12 items-center justify-center gap-2 rounded-md border border-blue-200 bg-[#0b4fb3] text-sm font-bold text-white">
             <Phone size={17} />
@@ -2009,7 +2284,7 @@ function AdminLogin() {
 function Header() {
   return (
     <header className="pointer-events-none fixed inset-x-0 top-0 z-30 mx-auto flex h-14 max-w-md items-center justify-between px-3 pt-2 lg:hidden">
-      <img src="/brand/MEGATRONLOGO.png" alt="Megatron Logo" className="h-auto w-20 object-contain sm:w-24" />
+      <BrandLogo className="h-auto w-20 sm:w-24" variant="mobileLogo" />
       <Link
         to="/offer"
         className="pointer-events-auto grid h-8 w-8 place-items-center rounded-full border border-[#F5B400] bg-[#050505] text-[0px] text-[#F5B400] shadow-[0_0_18px_rgba(245,180,0,0.65)] transition active:scale-90"
@@ -2030,6 +2305,38 @@ function TinyPrivacyLink() {
     >
       Privacy
     </Link>
+  );
+}
+
+function HeaderBannerSlider({ banners }) {
+  const activeBanners = sortByOrder(banners).filter((banner) => banner.active !== false && banner.imageUrl);
+  const visibleBanners = activeBanners.length ? activeBanners : defaultHeaderBanners;
+  const loopBanners = [...visibleBanners, ...visibleBanners];
+
+  return (
+    <div className="absolute inset-x-0 top-14 z-20 mx-auto max-w-md overflow-hidden border-y border-blue-200 bg-[#063b91] lg:left-0 lg:right-0 lg:top-0 lg:max-w-none lg:rounded-t-[1.35rem]">
+      <div className="banner-marquee flex w-max gap-3 py-2 hover:[animation-play-state:paused]">
+        {loopBanners.map((banner, index) => {
+          const image = (
+            <img
+              src={banner.imageUrl}
+              alt={banner.title || "Megatron banner"}
+              className="h-24 w-[19rem] rounded-md object-cover shadow-lg sm:h-28 sm:w-[22rem] lg:h-32 lg:w-[28rem]"
+              loading={index < 2 ? "eager" : "lazy"}
+            />
+          );
+          return banner.linkUrl ? (
+            <a key={`${banner.id || banner.imageUrl}-${index}`} href={banner.linkUrl} className="block shrink-0" target="_blank" rel="noreferrer">
+              {image}
+            </a>
+          ) : (
+            <div key={`${banner.id || banner.imageUrl}-${index}`} className="shrink-0">
+              {image}
+            </div>
+          );
+        })}
+      </div>
+    </div>
   );
 }
 
@@ -2307,7 +2614,7 @@ function DesktopSidebar({ categories, activeCategory, onSelectCategory, onJobs, 
   return (
     <aside className="hidden h-[calc(100svh-2rem)] rounded-xl border border-blue-200 bg-[#0b4fb3] p-2 text-white shadow-2xl lg:flex lg:flex-col">
       <div className="border-b border-blue-200 pb-3">
-        <img src="/brand/MEGATRONLOGO.png" alt="Megatron Logo" className="h-auto w-20 object-contain" />
+        <BrandLogo className="h-auto w-20" variant="mobileLogo" />
         <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.14em] text-white">Reels</p>
       </div>
       <div className="mt-3 grid flex-1 content-start gap-1.5">
@@ -2412,9 +2719,13 @@ function ReelsApp() {
   const { items: savedCategories } = useFirestoreCollection("categories", [], "label");
   const { items: savedSubcategories } = useFirestoreCollection("courseSubcategories", [], "label");
   const { items: websiteContentItems } = useFirestoreCollection("websiteContent", defaultWebsiteContentItems);
+  const { items: brochures } = useFirestoreCollection("brochures", [], "courseLabel");
+  const { items: faqItems } = useFirestoreCollection("faqs", defaultFaqs, "orderIndex");
+  const { items: headerBanners } = useFirestoreCollection("headerBanners", defaultHeaderBanners, "orderIndex");
+  const { data: branding } = useFirestoreDocument("branding", "main", defaultBranding);
+  const { data: seoContent } = useFirestoreDocument("seoContent", "main", defaultSeoContent);
   const { data: playbackSettings } = useFirestoreDocument("settings", "playback", defaultPlaybackSettings);
   const websiteContent = websiteContentItems[0] || defaultWebsiteContent;
-  const salesFunnelPaymentUrlIsInvalid = Boolean(salesFunnelForm.paymentLink) && !isAllowedRazorpayUrl(salesFunnelForm.paymentLink);
   const autoCategoryLoop = playbackSettings.autoCategoryLoop !== false;
   const categories = React.useMemo(() => mergeCategories(savedCategories), [savedCategories]);
   const courseSubcategories = React.useMemo(() => mergeSubcategories(savedSubcategories), [savedSubcategories]);
@@ -2448,7 +2759,10 @@ function ReelsApp() {
   const activeReel = feedVideos[activeIndex] || visibleVideos[0] || null;
   const seoCategory =
     activeModal.type === "joinClass" ? "join-class" : activeModal.type === "direction" ? "direction" : activeModal.type === "job" ? "jobs" : activeCategory;
-  useSeo({ activeCategory: seoCategory, activeSubcategory, activeReel: activeModal.type ? null : activeReel });
+  const activeFaqs = React.useMemo(() => sortByOrder(faqItems).filter((faq) => faq.active !== false), [faqItems]);
+  const safeSeoContent = { ...defaultSeoContent, ...seoContent };
+  useDynamicFavicon(branding);
+  useSeo({ activeCategory: seoCategory, activeSubcategory, activeReel: activeModal.type ? null : activeReel, seoContent: safeSeoContent, faqs: activeFaqs });
   const clearCategoryTransition = React.useCallback(() => {
     window.clearTimeout(transitionTimeoutRef.current);
     setCategoryTransition(null);
@@ -2498,6 +2812,17 @@ function ReelsApp() {
     clearCategoryTransition();
     closeOverlay();
   }, [clearCategoryTransition, closeOverlay]);
+
+  const handleDownloadBrochure = React.useCallback(() => {
+    const brochure = brochures.find((item) => item.active !== false && item.pdfUrl);
+    if (!brochure) {
+      setCallNotice("Course brochure is not available yet. Please contact Megatron for the latest brochure.");
+      window.clearTimeout(callNoticeTimeoutRef.current);
+      callNoticeTimeoutRef.current = window.setTimeout(() => setCallNotice(""), 4200);
+      return;
+    }
+    window.open(brochure.pdfUrl, "_blank", "noopener,noreferrer");
+  }, [brochures]);
 
   const getCategoryLabel = React.useCallback(
     (categoryId) => categories.find((category) => normalizeCategoryId(category.id) === normalizeCategoryId(categoryId))?.label || categoryId,
@@ -2661,8 +2986,9 @@ function ReelsApp() {
         }`}
       >
         <Header activeCategory={activeCategory} categories={categories} />
+        <HeaderBannerSlider banners={headerBanners} />
         {activeCategory === "courses" && !activeModal.type && (
-          <div className="no-scrollbar fixed inset-x-0 top-[4rem] z-20 mx-auto flex h-[34px] max-w-md items-center gap-1 overflow-x-auto whitespace-nowrap py-0 pl-[66px] pr-2 lg:absolute lg:max-w-none">
+          <div className="no-scrollbar fixed inset-x-0 top-[11rem] z-20 mx-auto flex h-[34px] max-w-md items-center gap-1 overflow-x-auto whitespace-nowrap py-0 pl-[66px] pr-2 lg:absolute lg:max-w-none">
             <button
               type="button"
               onClick={() => selectSubcategory("all")}
@@ -2688,7 +3014,7 @@ function ReelsApp() {
         )}
         <div
           ref={scrollerRef}
-          className="no-scrollbar h-[100svh] overflow-y-auto overscroll-contain scroll-smooth snap-y snap-mandatory bg-[#063b91] lg:h-full"
+          className="no-scrollbar h-[100svh] overflow-y-auto overscroll-contain scroll-smooth snap-y snap-mandatory bg-[#063b91] pt-40 lg:h-full lg:pt-36"
         >
           {feedVideos.map((item, index) => (
             <Reel
@@ -2728,6 +3054,25 @@ function ReelsApp() {
       />
 
       <LiveChatWidget currentReel={activeReel} currentCategory={getCategoryLabel(activeCategory)} />
+      <section className="sr-only" aria-label="AI search course information">
+        <h2>Megatron course information for answer engines</h2>
+        <h3>What is this course?</h3>
+        <p>{safeSeoContent.courseWhat}</p>
+        <h3>Who should join?</h3>
+        <p>{safeSeoContent.whoShouldJoin}</p>
+        <h3>Career opportunities</h3>
+        <p>{safeSeoContent.careerOpportunities}</p>
+        <h3>Duration</h3>
+        <p>{safeSeoContent.duration}</p>
+        <h3>Fees</h3>
+        <p>{safeSeoContent.fees}</p>
+        <h3>Admission process</h3>
+        <p>{safeSeoContent.admissionProcess}</p>
+        <h3>Institute experience</h3>
+        <p>{safeSeoContent.instituteExperience}</p>
+        <h3>Placement highlights</h3>
+        <p>{safeSeoContent.placementHighlights}</p>
+      </section>
       <TinyPrivacyLink />
       <Link
         to="/offer"
@@ -2771,7 +3116,7 @@ function ReelsApp() {
         {activeModal.type === "contact" && <ContactModal onClose={closeOverlay} onDirection={() => openOverlay("direction")} />}
         {activeModal.type === "direction" && <DirectionModal onClose={closeOverlay} />}
         {activeModal.type === "share" && <ShareModal item={activeModal.item} onClose={closeOverlay} />}
-        {activeModal.type === "website" && <WebsiteModal onClose={closeOverlay} onAdmission={() => openOverlay("joinClass")} onContact={() => openOverlay("contact")} content={websiteContent} />}
+        {activeModal.type === "website" && <WebsiteModal onClose={closeOverlay} onAdmission={() => openOverlay("joinClass")} onContact={() => openOverlay("contact")} onDownloadBrochure={handleDownloadBrochure} content={websiteContent} />}
         {activeModal.type === "joinClass" && <AdmissionModal onClose={closeOverlay} subcategories={courseSubcategories} />}
       </AnimatePresence>
     </main>
@@ -2819,7 +3164,7 @@ function SalesFunnelPage() {
             <ChevronLeft size={16} />
             Reels
           </Link>
-          <BrandLogo className="h-9 w-24" />
+          <BrandLogo className="h-9 w-24" variant="salesFunnelLogo" />
         </header>
 
         <div className="mx-auto grid max-w-6xl gap-8 pt-8 lg:grid-cols-[1fr_0.78fr] lg:items-center lg:pt-14">
@@ -2849,7 +3194,7 @@ function SalesFunnelPage() {
                   key={label}
                   type="button"
                   onClick={() => openPaymentLink(paymentLink, label)}
-                  className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-[#f8d879] px-5 text-sm font-black text-black shadow-[0_0_28px_rgba(248,216,121,0.32)] transition active:scale-95"
+                  className="inline-flex h-12 items-center justify-center gap-2 rounded-md bg-[#00E5FF] px-5 text-sm font-black text-black shadow-[0_0_28px_rgba(0,229,255,0.32)] transition hover:bg-[#00B8D4] active:scale-95"
                 >
                   <Lock size={16} />
                   {label}
@@ -2940,7 +3285,7 @@ function SalesFunnelPage() {
                   type="button"
                   onClick={() => handleCta(label)}
                   className={`inline-flex h-12 items-center justify-center gap-2 rounded-md text-sm font-black transition active:scale-95 ${
-                    ["INSTANT JOIN", "ENROLL NOW"].includes(String(label).toUpperCase()) ? "bg-[#f8d879] text-black" : "border border-[#f8d879]/45 bg-black text-[#f8d879]"
+                    "bg-[#00E5FF] text-black shadow-[0_0_22px_rgba(0,229,255,0.24)] hover:bg-[#00B8D4]"
                   }`}
                 >
                   {["INSTANT JOIN", "ENROLL NOW"].includes(String(label).toUpperCase()) ? <Lock size={16} /> : <Send size={16} />}
@@ -2960,6 +3305,68 @@ function SalesFunnelPage() {
           </div>
         </div>
       </section>
+    </main>
+  );
+}
+
+function FaqPage() {
+  const { items: faqItems } = useFirestoreCollection("faqs", defaultFaqs, "orderIndex");
+  const activeFaqs = React.useMemo(
+    () => sortByOrder(faqItems).filter((faq) => faq.active !== false),
+    [faqItems],
+  );
+
+  usePageMeta({
+    title: "Megatron FAQs | Course, Admission and Career Questions",
+    description: "Frequently asked questions about Megatron College of Multimedia courses, admissions, brochures, career support, and contact options.",
+    keywords: "Megatron FAQs, animation course questions, VFX course admission, multimedia institute Pune",
+    image: BRAND_LOGO_SRC,
+    path: "/faqs",
+  });
+
+  React.useEffect(() => {
+    let schemaScript = document.head.querySelector("#megatron-jsonld");
+    if (!schemaScript) {
+      schemaScript = document.createElement("script");
+      schemaScript.id = "megatron-jsonld";
+      schemaScript.type = "application/ld+json";
+      document.head.appendChild(schemaScript);
+    }
+    schemaScript.textContent = JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "FAQPage",
+      mainEntity: activeFaqs.map((faq) => ({
+        "@type": "Question",
+        name: faq.question,
+        acceptedAnswer: { "@type": "Answer", text: faq.answer },
+      })),
+    });
+  }, [activeFaqs]);
+
+  return (
+    <main className="min-h-[100svh] overflow-y-auto bg-[linear-gradient(180deg,#1877f2_0%,#0b4fb3_42%,#061f55_100%)] px-4 py-5 text-white sm:px-6 lg:px-10 lg:py-10">
+      <div className="mx-auto max-w-4xl">
+        <header className="flex items-center justify-between gap-4 rounded-lg border border-blue-200 bg-[#0b4fb3] px-4 py-3">
+          <BrandLogo className="h-10 w-28" />
+          <Link to="/" className="inline-flex h-10 items-center gap-2 rounded-md bg-white px-3 text-xs font-extrabold text-[#1877f2]">
+            <ChevronLeft size={16} />
+            Reels
+          </Link>
+        </header>
+        <section className="mt-5 rounded-lg border border-blue-200 bg-[#0b4fb3] p-5 lg:p-7">
+          <p className="text-xs font-extrabold uppercase tracking-[0.18em] text-blue-100">Megatron Help</p>
+          <h1 className="mt-3 text-3xl font-black leading-tight lg:text-5xl">Frequently Asked Questions</h1>
+          <div className="mt-6 grid gap-3">
+            {activeFaqs.map((faq) => (
+              <article key={faq.docId || faq.id} className="rounded-lg border border-blue-200 bg-[#063b91] p-4">
+                <p className="text-[11px] font-extrabold uppercase tracking-[0.16em] text-blue-100">{faq.category || "General"}</p>
+                <h2 className="mt-2 text-lg font-extrabold">{faq.question}</h2>
+                <p className="mt-2 text-sm font-medium leading-6 text-white">{faq.answer}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+      </div>
     </main>
   );
 }
@@ -3080,6 +3487,7 @@ function LiveChatAdminCard({ chat, onDelete, onStatusChange }) {
           </div>
           <p className="mt-1 text-xs text-white">{chat.currentCategory || "Category"} / {chat.currentReelTitle || "Current reel not captured"}</p>
           <p className="mt-2 text-sm leading-5 text-white">{chat.message || "No message"}</p>
+          <AdminDateTime value={chat.createdAt || chat.updatedAt} />
         </div>
         <div className="flex shrink-0 gap-2">
           <button type="button" onClick={() => onStatusChange(chat, { status: "read", unreadByAdmin: false })} className="grid h-9 w-9 place-items-center rounded-md bg-white text-[#1877f2]" aria-label="Mark as read">
@@ -3125,7 +3533,7 @@ function LiveChatAdminCard({ chat, onDelete, onStatusChange }) {
 
 function AdminDashboard() {
   const navigate = useNavigate();
-  const { user, logout } = useAuth();
+  const { user, logout, adminProfile, permissions } = useAuth();
   const { items: reels } = useFirestoreCollection("reels", demoVideos);
   const { items: savedCategories } = useFirestoreCollection("categories", [], "label");
   const { items: savedSubcategories } = useFirestoreCollection("courseSubcategories", [], "label");
@@ -3135,9 +3543,16 @@ function AdminDashboard() {
   const { items: admissions } = useFirestoreCollection("admissions", []);
   const { items: liveChats } = useFirestoreCollection("liveChats", []);
   const { items: websiteContentItems } = useFirestoreCollection("websiteContent", defaultWebsiteContentItems);
+  const { items: faqs } = useFirestoreCollection("faqs", defaultFaqs, "orderIndex");
+  const { items: brochures } = useFirestoreCollection("brochures", [], "courseLabel");
+  const { items: headerBanners } = useFirestoreCollection("headerBanners", defaultHeaderBanners, "orderIndex");
+  const { data: branding } = useFirestoreDocument("branding", "main", defaultBranding);
+  const { items: adminUsers } = useFirestoreCollection("adminUsers", [], "email");
+  const { items: adminActivityLogs } = useFirestoreCollection("adminActivityLogs", [], "createdAt");
+  const { data: adminSeoContent } = useFirestoreDocument("seoContent", "main", defaultSeoContent);
   const { data: salesFunnelContent } = useFirestoreDocument("salesFunnel", "main", defaultSalesFunnelContent);
   const { data: playbackSettings } = useFirestoreDocument("settings", "playback", defaultPlaybackSettings);
-  const [activeAdminSection, setActiveAdminSection] = React.useState("reels");
+  const [activeAdminSection, setActiveAdminSection] = React.useState(() => (permissions.includes("reels") ? "reels" : permissions[0] || "live-chat"));
   const [selectedCategory, setSelectedCategory] = React.useState("all");
   const [adminSearch, setAdminSearch] = React.useState("");
   const [editingReel, setEditingReel] = React.useState(null);
@@ -3174,10 +3589,31 @@ function AdminDashboard() {
     gallery: defaultWebsiteContent.gallery.join("\n"),
   });
   const [salesFunnelForm, setSalesFunnelForm] = React.useState(defaultSalesFunnelContent);
+  const [editingFaq, setEditingFaq] = React.useState(null);
+  const [faqForm, setFaqForm] = React.useState({ question: "", answer: "", category: "General", orderIndex: 10, active: true });
+  const [brochureForm, setBrochureForm] = React.useState({ courseId: defaultCourseSubcategories[0].id, courseLabel: defaultCourseSubcategories[0].label, pdfUrl: "", pdfName: "", active: true });
+  const [brochureFile, setBrochureFile] = React.useState(null);
+  const [seoForm, setSeoForm] = React.useState(defaultSeoContent);
+  const [brandingForm, setBrandingForm] = React.useState(defaultBranding);
+  const [brandingFiles, setBrandingFiles] = React.useState({});
+  const [bannerForm, setBannerForm] = React.useState({ title: "", imageUrl: "", linkUrl: "", orderIndex: 10, active: true });
+  const [bannerFile, setBannerFile] = React.useState(null);
+  const [editingBanner, setEditingBanner] = React.useState(null);
+  const [editingAdminUser, setEditingAdminUser] = React.useState(null);
+  const [adminUserForm, setAdminUserForm] = React.useState({
+    uid: "",
+    email: "",
+    role: ADMIN_ROLES.AGENT,
+    permissions: AGENT_PERMISSIONS,
+    status: "active",
+  });
 
+  const isSuperAdmin = normalizeRole(adminProfile?.role) === ADMIN_ROLES.SUPER;
+  const canAccessSection = React.useCallback((sectionId) => isSuperAdmin || permissions.includes(sectionId), [isSuperAdmin, permissions]);
   const categories = React.useMemo(() => mergeCategories(savedCategories), [savedCategories]);
   const courseSubcategories = React.useMemo(() => mergeSubcategories(savedSubcategories), [savedSubcategories]);
   const websiteContent = websiteContentItems[0] || defaultWebsiteContent;
+  const salesFunnelPaymentUrlIsInvalid = Boolean(salesFunnelForm.paymentLink) && !isAllowedRazorpayUrl(salesFunnelForm.paymentLink);
   const autoCategoryLoop = playbackSettings.autoCategoryLoop !== false;
   const matchesSearch = (item) => JSON.stringify(item).toLowerCase().includes(adminSearch.toLowerCase());
   const orderedReels = React.useMemo(() => sortReelsByOrder(reels), [reels]);
@@ -3187,6 +3623,11 @@ function AdminDashboard() {
   const listedMessages = messages.filter(matchesSearch);
   const listedAdmissions = admissions.filter(matchesSearch);
   const listedLiveChats = liveChats.filter(matchesSearch);
+  const listedFaqs = sortByOrder(faqs).filter(matchesSearch);
+  const listedBrochures = sortByOrder(brochures).filter(matchesSearch);
+  const listedHeaderBanners = sortByOrder(headerBanners).filter(matchesSearch);
+  const listedAdminUsers = adminUsers.filter(matchesSearch);
+  const listedAdminActivityLogs = adminActivityLogs.filter(matchesSearch).slice(0, 20);
   const liveChatUnreadCount = liveChats.filter((chat) => chat.unreadByAdmin && chat.status !== "closed").length;
   const totalViews = reels.reduce((sum, reel) => sum + Number(reel.views || 0), 0);
   const totalLeads = reels.reduce((sum, reel) => sum + Number(reel.leads || 0), 0);
@@ -3199,7 +3640,12 @@ function AdminDashboard() {
   const adminSections = [
     { id: "reels", label: "Reels Management", icon: FileVideo },
     { id: "website", label: "Website Content", icon: Globe2 },
+    { id: "branding", label: "Logo Manager", icon: Sparkles },
+    { id: "banners", label: "Header Banner Manager", icon: LayoutDashboard },
     { id: "sales-funnel", label: "Sales Funnel Manager", icon: Sparkles },
+    { id: "seo", label: "SEO Manager", icon: Search },
+    { id: "faqs", label: "FAQ Manager", icon: BookOpen },
+    { id: "brochures", label: "Brochure Manager", icon: Download },
     { id: "admissions", label: "Join Class Admissions", icon: GraduationCap },
     { id: "applicants", label: "Job Applicants", icon: Users },
     { id: "companies", label: "Hiring Companies", icon: BriefcaseBusiness },
@@ -3207,7 +3653,14 @@ function AdminDashboard() {
     { id: "messages", label: "Messages & Comments", icon: MessageCircle },
     { id: "categories", label: "Categories", icon: BookOpen },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
+    { id: "admin-users", label: "Admin User Manager", icon: Lock },
   ];
+  const visibleAdminSections = adminSections.filter((section) => canAccessSection(section.id));
+
+  React.useEffect(() => {
+    if (!visibleAdminSections.length) return;
+    if (!canAccessSection(activeAdminSection)) setActiveAdminSection(visibleAdminSections[0].id);
+  }, [activeAdminSection, canAccessSection, visibleAdminSections]);
 
   React.useEffect(() => {
     setWebsiteForm({
@@ -3227,6 +3680,14 @@ function AdminDashboard() {
       socialLinks: salesFunnelContent.socialLinks || defaultSalesFunnelContent.socialLinks,
     });
   }, [salesFunnelContent]);
+
+  React.useEffect(() => {
+    setSeoForm({ ...defaultSeoContent, ...adminSeoContent });
+  }, [adminSeoContent]);
+
+  React.useEffect(() => {
+    setBrandingForm({ ...defaultBranding, ...branding });
+  }, [branding]);
 
   React.useEffect(() => {
     if (liveChatUnreadCount > previousLiveChatUnreadRef.current && previousLiveChatUnreadRef.current !== 0) {
@@ -3730,6 +4191,323 @@ function AdminDashboard() {
     setStatus("Sales funnel content updated.");
   };
 
+  const updateSeoField = (field, value) => setSeoForm((form) => ({ ...form, [field]: value }));
+
+  const saveSeoContent = async (event) => {
+    event.preventDefault();
+    if (!db) {
+      setStatus("Connect Firestore to save SEO settings.");
+      return;
+    }
+    const payload = {
+      ...defaultSeoContent,
+      ...seoForm,
+      id: "main",
+      updatedAt: serverTimestamp(),
+      createdAt: adminSeoContent.createdAt || serverTimestamp(),
+    };
+    await setDoc(doc(db, "seoContent", "main"), payload, { merge: true });
+    setStatus("SEO settings updated.");
+  };
+
+  const updateBrandingField = (field, value) => setBrandingForm((form) => ({ ...form, [field]: value }));
+
+  const saveBranding = async (event) => {
+    event.preventDefault();
+    if (!db) {
+      setStatus("Connect Firestore to save branding.");
+      return;
+    }
+    setStatus("Saving branding...");
+    const payload = { ...defaultBranding, ...brandingForm, id: "main", updatedAt: serverTimestamp() };
+    for (const [field, file] of Object.entries(brandingFiles)) {
+      if (file) {
+        const uploaded = await uploadPublicToCloudinary(file, "image", "branding", setUploadProgress);
+        payload[field] = uploaded.url;
+        payload[`${field}PublicId`] = uploaded.publicId;
+      }
+    }
+    await setDoc(doc(db, "branding", "main"), payload, { merge: true });
+    setBrandingFiles({});
+    setUploadProgress(0);
+    setStatus("Branding updated.");
+  };
+
+  const resetBranding = () => {
+    setBrandingForm(defaultBranding);
+    setBrandingFiles({});
+  };
+
+  const resetBannerForm = () => {
+    setEditingBanner(null);
+    setBannerFile(null);
+    setBannerForm({ title: "", imageUrl: "", linkUrl: "", orderIndex: (headerBanners.length + 1) * 10, active: true });
+  };
+
+  const saveHeaderBanner = async (event) => {
+    event.preventDefault();
+    if (!db) {
+      setStatus("Connect Firestore to save header banners.");
+      return;
+    }
+    setStatus("Saving banner...");
+    const uploaded = bannerFile ? await uploadPublicToCloudinary(bannerFile, "image", "header-banners", setUploadProgress) : null;
+    const id = editingBanner?.docId || slugify(bannerForm.title) || `banner-${Date.now()}`;
+    const payload = {
+      id,
+      title: bannerForm.title.trim() || "Megatron banner",
+      imageUrl: uploaded?.url || bannerForm.imageUrl,
+      imagePublicId: uploaded?.publicId || editingBanner?.imagePublicId || "",
+      linkUrl: bannerForm.linkUrl.trim(),
+      orderIndex: Number(bannerForm.orderIndex || 999),
+      active: bannerForm.active !== false,
+      updatedAt: serverTimestamp(),
+      createdAt: editingBanner?.createdAt || serverTimestamp(),
+    };
+    if (!payload.imageUrl) {
+      setStatus("Upload a banner image or add an image URL.");
+      return;
+    }
+    await setDoc(doc(db, "headerBanners", id), payload, { merge: true });
+    setUploadProgress(0);
+    setStatus("Header banner saved.");
+    resetBannerForm();
+  };
+
+  const editHeaderBanner = (banner) => {
+    setEditingBanner(banner);
+    setBannerFile(null);
+    setBannerForm({
+      title: banner.title || "",
+      imageUrl: banner.imageUrl || "",
+      linkUrl: banner.linkUrl || "",
+      orderIndex: getOrderIndex(banner),
+      active: banner.active !== false,
+    });
+    setActiveAdminSection("banners");
+  };
+
+  const saveHeaderBannerOrder = async (banner, orderIndex) => {
+    if (!db || !banner?.docId) {
+      setStatus("Default banners cannot be reordered until saved.");
+      return;
+    }
+    await updateDoc(doc(db, "headerBanners", banner.docId), { orderIndex: Number(orderIndex), updatedAt: serverTimestamp() });
+    setStatus("Banner order updated.");
+  };
+
+  const deleteHeaderBanner = async (banner) => {
+    if (!db || !banner?.docId) {
+      setStatus("Default banners cannot be deleted.");
+      return;
+    }
+    await deleteDoc(doc(db, "headerBanners", banner.docId));
+    setStatus("Header banner deleted.");
+  };
+
+  const resetFaqForm = () => {
+    setEditingFaq(null);
+    setFaqForm({ question: "", answer: "", category: "General", orderIndex: (faqs.length + 1) * 10, active: true });
+  };
+
+  const saveFaq = async (event) => {
+    event.preventDefault();
+    if (!db) {
+      setStatus("Connect Firestore to save FAQs.");
+      return;
+    }
+    const id = editingFaq?.docId || slugify(faqForm.question) || `faq-${Date.now()}`;
+    const payload = {
+      id,
+      question: faqForm.question.trim(),
+      answer: faqForm.answer.trim(),
+      category: faqForm.category.trim() || "General",
+      orderIndex: Number(faqForm.orderIndex || 999),
+      active: faqForm.active !== false,
+      updatedAt: serverTimestamp(),
+      createdAt: editingFaq?.createdAt || serverTimestamp(),
+    };
+    await setDoc(doc(db, "faqs", id), payload, { merge: true });
+    setStatus("FAQ saved.");
+    resetFaqForm();
+  };
+
+  const editFaq = (faq) => {
+    setEditingFaq(faq);
+    setFaqForm({
+      question: faq.question || "",
+      answer: faq.answer || "",
+      category: faq.category || "General",
+      orderIndex: getOrderIndex(faq),
+      active: faq.active !== false,
+    });
+    setActiveAdminSection("faqs");
+  };
+
+  const saveFaqOrder = async (faq, orderIndex) => {
+    if (!db || !faq?.docId) {
+      setStatus("Demo FAQs cannot be reordered until saved to Firestore.");
+      return;
+    }
+    await updateDoc(doc(db, "faqs", faq.docId), { orderIndex: Number(orderIndex), updatedAt: serverTimestamp() });
+    setStatus("FAQ order updated.");
+  };
+
+  const toggleFaqActive = async (faq) => {
+    if (!db || !faq?.docId) {
+      setStatus("Demo FAQs cannot be updated until saved to Firestore.");
+      return;
+    }
+    await updateDoc(doc(db, "faqs", faq.docId), { active: faq.active === false, updatedAt: serverTimestamp() });
+  };
+
+  const updateBrochureCourse = (courseId) => {
+    const course = defaultCourseSubcategories.find((item) => item.id === courseId) || defaultCourseSubcategories[0];
+    setBrochureForm((form) => ({ ...form, courseId: course.id, courseLabel: course.label }));
+  };
+
+  const saveBrochure = async (event) => {
+    event.preventDefault();
+    if (!db) {
+      setStatus("Connect Firestore to save brochures.");
+      return;
+    }
+    if (brochureFile && brochureFile.type !== "application/pdf") {
+      setStatus("Upload a PDF brochure file.");
+      return;
+    }
+    setStatus("Saving brochure...");
+    const uploaded = brochureFile ? await uploadToCloudinary(brochureFile, "raw") : null;
+    const payload = {
+      id: brochureForm.courseId,
+      courseId: brochureForm.courseId,
+      courseLabel: brochureForm.courseLabel,
+      pdfUrl: uploaded?.url || brochureForm.pdfUrl,
+      pdfName: uploaded?.url ? brochureFile.name : brochureForm.pdfName,
+      cloudinaryPublicId: uploaded?.publicId || brochureForm.cloudinaryPublicId || "",
+      active: brochureForm.active !== false,
+      updatedAt: serverTimestamp(),
+      createdAt: serverTimestamp(),
+    };
+    if (!payload.pdfUrl) {
+      setStatus("Add or upload a brochure PDF first.");
+      return;
+    }
+    await setDoc(doc(db, "brochures", brochureForm.courseId), payload, { merge: true });
+    setBrochureFile(null);
+    setStatus("Brochure saved.");
+  };
+
+  const editBrochure = (brochure) => {
+    setBrochureForm({
+      courseId: brochure.courseId || brochure.id || defaultCourseSubcategories[0].id,
+      courseLabel: brochure.courseLabel || defaultCourseSubcategories[0].label,
+      pdfUrl: brochure.pdfUrl || "",
+      pdfName: brochure.pdfName || "",
+      cloudinaryPublicId: brochure.cloudinaryPublicId || "",
+      active: brochure.active !== false,
+    });
+    setBrochureFile(null);
+    setActiveAdminSection("brochures");
+  };
+
+  const deleteBrochure = async (brochure) => {
+    if (!db || !brochure?.docId) {
+      setStatus("Select a saved brochure to delete.");
+      return;
+    }
+    await deleteDoc(doc(db, "brochures", brochure.docId));
+    setStatus("Brochure deleted.");
+  };
+
+  const resetAdminUserForm = () => {
+    setEditingAdminUser(null);
+    setAdminUserForm({
+      uid: "",
+      email: "",
+      role: ADMIN_ROLES.AGENT,
+      permissions: AGENT_PERMISSIONS,
+      status: "active",
+    });
+  };
+
+  const updateAdminUserPermission = (permission, enabled) => {
+    setAdminUserForm((form) => {
+      const current = new Set(form.permissions || []);
+      if (enabled) current.add(permission);
+      else current.delete(permission);
+      return { ...form, permissions: Array.from(current).filter((item) => AGENT_PERMISSIONS.includes(item)) };
+    });
+  };
+
+  const saveAdminUser = async (event) => {
+    event.preventDefault();
+    if (!isSuperAdmin) {
+      setStatus("Only Super Admin can manage admin users.");
+      return;
+    }
+    if (!db) {
+      setStatus("Connect Firestore to manage admin users.");
+      return;
+    }
+    const uid = String(adminUserForm.uid || editingAdminUser?.docId || "").trim();
+    if (!uid) {
+      setStatus("Enter the Firebase Auth UID for this admin user.");
+      return;
+    }
+    const role = normalizeRole(adminUserForm.role);
+    const permissionsForRole = role === ADMIN_ROLES.SUPER ? SUPER_ADMIN_PERMISSIONS : getAdminPermissions(adminUserForm);
+    const payload = {
+      email: adminUserForm.email.trim(),
+      role,
+      permissions: permissionsForRole,
+      status: adminUserForm.status || "active",
+      updatedAt: serverTimestamp(),
+      createdAt: editingAdminUser?.createdAt || serverTimestamp(),
+      lastLoginAt: editingAdminUser?.lastLoginAt || null,
+    };
+    await setDoc(doc(db, "adminUsers", uid), payload, { merge: true });
+    await addDoc(collection(db, "adminActivityLogs"), {
+      uid,
+      email: payload.email,
+      action: editingAdminUser ? "admin_user_updated" : "admin_user_added",
+      actorUid: user?.uid || "",
+      actorEmail: user?.email || "",
+      createdAt: serverTimestamp(),
+    });
+    setStatus("Admin user saved.");
+    resetAdminUserForm();
+  };
+
+  const editAdminUser = (adminUser) => {
+    setEditingAdminUser(adminUser);
+    setAdminUserForm({
+      uid: adminUser.docId || adminUser.uid || "",
+      email: adminUser.email || "",
+      role: normalizeRole(adminUser.role),
+      permissions: getAdminPermissions(adminUser),
+      status: adminUser.status || "active",
+    });
+    setActiveAdminSection("admin-users");
+  };
+
+  const disableAdminUser = async (adminUser) => {
+    if (!isSuperAdmin || !db || !adminUser?.docId) {
+      setStatus("Only Super Admin can disable admin users.");
+      return;
+    }
+    await updateDoc(doc(db, "adminUsers", adminUser.docId), { status: "disabled", updatedAt: serverTimestamp() });
+    await addDoc(collection(db, "adminActivityLogs"), {
+      uid: adminUser.docId,
+      email: adminUser.email || "",
+      action: "admin_user_disabled",
+      actorUid: user?.uid || "",
+      actorEmail: user?.email || "",
+      createdAt: serverTimestamp(),
+    });
+    setStatus("Admin user disabled.");
+  };
+
   const handleLogout = async () => {
     await logout();
     navigate("/admin-login", { replace: true });
@@ -3763,7 +4541,7 @@ function AdminDashboard() {
               >
                 <ChevronLeft size={20} />
               </button>
-              <img src={BRAND_LOGO_SRC} alt="Megatron logo" className="h-10 w-28 object-contain sm:h-11 sm:w-36" />
+              <BrandLogo className="h-10 w-28 sm:h-11 sm:w-36" variant="adminLogo" />
               <div>
                 <p className="text-xs font-semibold uppercase tracking-[0.18em] text-white">Megatron</p>
                 <h1 className="text-xl font-bold tracking-normal sm:text-2xl">Admin Dashboard</h1>
@@ -3795,10 +4573,10 @@ function AdminDashboard() {
           <aside className="lg:sticky lg:top-20 lg:self-start">
             <div className="no-scrollbar flex gap-2 overflow-x-auto rounded-lg border border-blue-200 bg-[#0b4fb3] p-2 lg:grid lg:overflow-visible">
               <div className="hidden rounded-md bg-[#1877f2] p-3 lg:block">
-                <BrandLogo className="h-12 w-full" stacked />
+                <BrandLogo className="h-12 w-full" variant="desktopSidebarLogo" stacked />
                 <p className="mt-2 text-xs font-bold text-white">{BRAND_NAME}</p>
               </div>
-              {adminSections.map((section) => {
+              {visibleAdminSections.map((section) => {
                 const Icon = section.icon;
                 const active = activeAdminSection === section.id;
                 return (
@@ -4256,6 +5034,144 @@ function AdminDashboard() {
           </section>
         )}
 
+        {activeAdminSection === "branding" && (
+          <section className="mt-5 grid gap-5 lg:grid-cols-[1fr_0.85fr]">
+            <form onSubmit={saveBranding} className="rounded-lg border border-blue-200 bg-[#0b4fb3] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold">Logo Manager</h2>
+                  <p className="mt-1 text-xs text-white">Upload PNG, JPG, WEBP, or SVG logos. Empty fields use the default Megatron logo.</p>
+                </div>
+                <Sparkles size={20} />
+              </div>
+              <div className="mt-5 grid gap-4">
+                {[
+                  ["mainLogo", "Main Website Logo"],
+                  ["mobileLogo", "Mobile Logo"],
+                  ["desktopSidebarLogo", "Desktop Sidebar Logo"],
+                  ["adminLogo", "Admin Logo"],
+                  ["salesFunnelLogo", "Sales Funnel Logo"],
+                  ["footerLogo", "Footer Logo"],
+                  ["favicon", "Favicon"],
+                ].map(([field, label]) => (
+                  <div key={field} className="rounded-lg border border-blue-200 bg-[#063b91] p-3">
+                    <div className="flex items-center gap-3">
+                      <img src={brandingForm[field] || BRAND_LOGO_SRC} alt={label} className="h-12 w-24 object-contain" />
+                      <div className="min-w-0 flex-1">
+                        <FormField label={label} value={brandingForm[field]} onChange={(value) => updateBrandingField(field, value)} />
+                      </div>
+                    </div>
+                    <input
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg"
+                      onChange={(event) => setBrandingFiles((files) => ({ ...files, [field]: event.target.files?.[0] || null }))}
+                      className="mt-3 w-full rounded-md border border-blue-200 bg-[#0b4fb3] px-3 py-2 text-xs text-white"
+                    />
+                  </div>
+                ))}
+                {uploadProgress > 0 && <p className="text-xs font-bold text-white">Upload progress: {uploadProgress}%</p>}
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button className="flex h-11 items-center justify-center gap-2 rounded-md bg-white text-sm font-bold text-[#1877f2]">
+                    <Save size={17} />
+                    Save Branding
+                  </button>
+                  <button type="button" onClick={resetBranding} className="h-11 rounded-md border border-blue-200 bg-[#063b91] text-sm font-bold text-white">
+                    Reset to Default
+                  </button>
+                </div>
+              </div>
+            </form>
+            <div className="rounded-lg border border-blue-200 bg-[#0b4fb3] p-4">
+              <h2 className="text-base font-bold">Brand Preview</h2>
+              <div className="mt-4 grid gap-3">
+                {Object.entries({
+                  Main: "mainLogo",
+                  Mobile: "mobileLogo",
+                  Sidebar: "desktopSidebarLogo",
+                  Admin: "adminLogo",
+                  Funnel: "salesFunnelLogo",
+                  Footer: "footerLogo",
+                  Favicon: "favicon",
+                }).map(([label, field]) => (
+                  <div key={field} className="flex items-center justify-between rounded-md border border-blue-200 bg-[#063b91] p-3">
+                    <span className="text-xs font-bold">{label}</span>
+                    <img src={brandingForm[field] || BRAND_LOGO_SRC} alt={label} className="h-10 w-24 object-contain" />
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeAdminSection === "banners" && (
+          <section className="mt-5 grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
+            <form onSubmit={saveHeaderBanner} className="rounded-lg border border-blue-200 bg-[#0b4fb3] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold">{editingBanner ? "Edit Banner" : "Upload Banner"}</h2>
+                  <p className="mt-1 text-xs text-white">Banners auto-scroll right to left on the public website.</p>
+                </div>
+                <LayoutDashboard size={20} />
+              </div>
+              <div className="mt-5 grid gap-3">
+                <FormField label="Banner Title" value={bannerForm.title} onChange={(value) => setBannerForm((form) => ({ ...form, title: value }))} />
+                <FormField label="Banner Image URL" value={bannerForm.imageUrl} onChange={(value) => setBannerForm((form) => ({ ...form, imageUrl: value }))} type="url" />
+                <FormField label="Link URL" value={bannerForm.linkUrl} onChange={(value) => setBannerForm((form) => ({ ...form, linkUrl: value }))} type="url" />
+                <FormField label="Order" value={bannerForm.orderIndex} onChange={(value) => setBannerForm((form) => ({ ...form, orderIndex: value }))} type="number" />
+                <label className="grid gap-1.5 text-xs font-medium text-white">
+                  Upload Banner
+                  <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" onChange={(event) => setBannerFile(event.target.files?.[0] || null)} className="rounded-md border border-blue-200 bg-[#063b91] px-3 py-3 text-sm text-white" />
+                </label>
+                <label className="flex items-center justify-between gap-4 rounded-md border border-blue-200 bg-[#063b91] px-3 py-3 text-sm font-bold">
+                  Active
+                  <input type="checkbox" checked={bannerForm.active} onChange={(event) => setBannerForm((form) => ({ ...form, active: event.target.checked }))} className="h-5 w-5" />
+                </label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button className="flex h-11 items-center justify-center gap-2 rounded-md bg-white text-sm font-bold text-[#1877f2]">
+                    <Save size={17} />
+                    Save Banner
+                  </button>
+                  <button type="button" onClick={resetBannerForm} className="h-11 rounded-md border border-blue-200 bg-[#063b91] text-sm font-bold text-white">
+                    Clear
+                  </button>
+                </div>
+              </div>
+            </form>
+
+            <div className="rounded-lg border border-blue-200 bg-[#0b4fb3] p-4">
+              <h2 className="text-base font-bold">Header Banners</h2>
+              <div className="mt-4 grid gap-3">
+                {listedHeaderBanners.map((banner) => (
+                  <article key={banner.docId || banner.id} className="rounded-lg border border-blue-200 bg-[#063b91] p-3">
+                    <img src={banner.imageUrl} alt={banner.title || "Banner"} className="h-32 w-full rounded-md object-cover" />
+                    <div className="mt-3 flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold">{banner.title || "Banner"}</p>
+                        <p className="mt-1 text-xs text-white">Order {getOrderIndex(banner)} / {banner.active === false ? "Disabled" : "Active"}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button type="button" onClick={() => editHeaderBanner(banner)} className="grid h-8 w-8 place-items-center rounded-md bg-[#0b4fb3]" aria-label="Edit banner">
+                          <Pencil size={15} />
+                        </button>
+                        <button type="button" onClick={() => deleteHeaderBanner(banner)} className="grid h-8 w-8 place-items-center rounded-md bg-[#0b4fb3] text-rose-100" aria-label="Delete banner">
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+                    <input
+                      type="number"
+                      defaultValue={getOrderIndex(banner)}
+                      onBlur={(event) => saveHeaderBannerOrder(banner, event.target.value || getOrderIndex(banner))}
+                      className="mt-3 h-9 w-24 rounded-md border border-blue-200 bg-[#0b4fb3] px-2 text-xs font-bold text-white outline-none"
+                      aria-label={`Banner order for ${banner.title}`}
+                    />
+                  </article>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+
         {activeAdminSection === "sales-funnel" && (
           <section className="mt-5 grid gap-5 lg:grid-cols-[1fr_0.85fr]">
             <form onSubmit={saveSalesFunnelContent} className="rounded-lg border border-[#f8d879]/50 bg-[#0b0b0b] p-4 shadow-[0_0_32px_rgba(248,216,121,0.16)]">
@@ -4326,6 +5242,212 @@ function AdminDashboard() {
           </section>
         )}
 
+        {activeAdminSection === "seo" && (
+          <section className="mt-5 grid gap-5 lg:grid-cols-[1fr_0.85fr]">
+            <form onSubmit={saveSeoContent} className="rounded-lg border border-blue-200 bg-[#0b4fb3] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold">SEO Manager</h2>
+                  <p className="mt-1 text-xs text-white">Manage AEO, GEO, LLMO, AI search, and E-E-A-T signals.</p>
+                </div>
+                <Search size={20} />
+              </div>
+              <div className="mt-5 grid gap-3">
+                <FormField label="SEO Title" value={seoForm.seoTitle} onChange={(value) => updateSeoField("seoTitle", value)} required />
+                <FormField label="SEO Description" value={seoForm.seoDescription} onChange={(value) => updateSeoField("seoDescription", value)} textarea required />
+                <FormField label="SEO Keywords" value={seoForm.seoKeywords} onChange={(value) => updateSeoField("seoKeywords", value)} textarea />
+                <FormField label="AI Search Summary" value={seoForm.aiSearchSummary} onChange={(value) => updateSeoField("aiSearchSummary", value)} textarea />
+                <FormField label="Answer Engine Summary" value={seoForm.answerEngineSummary} onChange={(value) => updateSeoField("answerEngineSummary", value)} textarea />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <FormField label="Author Name" value={seoForm.authorName} onChange={(value) => updateSeoField("authorName", value)} />
+                  <FormField label="Duration" value={seoForm.duration} onChange={(value) => updateSeoField("duration", value)} />
+                </div>
+                <FormField label="Institute Experience" value={seoForm.instituteExperience} onChange={(value) => updateSeoField("instituteExperience", value)} textarea />
+                <FormField label="Trust Badges" value={seoForm.trustBadges} onChange={(value) => updateSeoField("trustBadges", value)} textarea />
+                <FormField label="Placement Highlights" value={seoForm.placementHighlights} onChange={(value) => updateSeoField("placementHighlights", value)} textarea />
+                <FormField label="What is this course?" value={seoForm.courseWhat} onChange={(value) => updateSeoField("courseWhat", value)} textarea />
+                <FormField label="Who should join?" value={seoForm.whoShouldJoin} onChange={(value) => updateSeoField("whoShouldJoin", value)} textarea />
+                <FormField label="Career opportunities" value={seoForm.careerOpportunities} onChange={(value) => updateSeoField("careerOpportunities", value)} textarea />
+                <FormField label="Fees" value={seoForm.fees} onChange={(value) => updateSeoField("fees", value)} />
+                <FormField label="Admission process" value={seoForm.admissionProcess} onChange={(value) => updateSeoField("admissionProcess", value)} textarea />
+                <button className="flex h-11 items-center justify-center gap-2 rounded-md bg-white text-sm font-bold text-[#1877f2]">
+                  <Save size={17} />
+                  Save SEO Settings
+                </button>
+              </div>
+            </form>
+
+            <div className="rounded-lg border border-blue-200 bg-[#0b4fb3] p-4">
+              <h2 className="text-base font-bold">Search Preview</h2>
+              <div className="mt-4 rounded-lg border border-blue-200 bg-[#063b91] p-4">
+                <p className="text-lg font-extrabold text-white">{seoForm.seoTitle}</p>
+                <p className="mt-2 text-sm leading-6 text-white">{seoForm.seoDescription}</p>
+                <div className="mt-4 grid gap-2 text-xs font-semibold text-white">
+                  <p>Author: {seoForm.authorName}</p>
+                  <p>AI Summary: {seoForm.aiSearchSummary}</p>
+                  <p>Answer Summary: {seoForm.answerEngineSummary}</p>
+                </div>
+              </div>
+              <div className="mt-4 rounded-lg border border-blue-200 bg-[#063b91] p-4">
+                <h3 className="text-sm font-extrabold">AI Search Blocks</h3>
+                <div className="mt-3 grid gap-2 text-xs leading-5 text-white">
+                  <p><strong>What:</strong> {seoForm.courseWhat}</p>
+                  <p><strong>Who:</strong> {seoForm.whoShouldJoin}</p>
+                  <p><strong>Careers:</strong> {seoForm.careerOpportunities}</p>
+                  <p><strong>Duration:</strong> {seoForm.duration}</p>
+                  <p><strong>Fees:</strong> {seoForm.fees}</p>
+                  <p><strong>Admission:</strong> {seoForm.admissionProcess}</p>
+                </div>
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeAdminSection === "faqs" && (
+          <section className="mt-5 grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
+            <form onSubmit={saveFaq} className="rounded-lg border border-blue-200 bg-[#0b4fb3] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold">{editingFaq ? "Edit FAQ" : "Add FAQ"}</h2>
+                  <p className="mt-1 text-xs text-white">FAQs appear on the public FAQ page and in FAQ schema.</p>
+                </div>
+                <BookOpen size={20} />
+              </div>
+              <div className="mt-5 grid gap-3">
+                <FormField label="Question" value={faqForm.question} onChange={(value) => setFaqForm((form) => ({ ...form, question: value }))} required />
+                <FormField label="Answer" value={faqForm.answer} onChange={(value) => setFaqForm((form) => ({ ...form, answer: value }))} textarea required />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <FormField label="Category" value={faqForm.category} onChange={(value) => setFaqForm((form) => ({ ...form, category: value }))} />
+                  <FormField label="Order" value={faqForm.orderIndex} onChange={(value) => setFaqForm((form) => ({ ...form, orderIndex: value }))} type="number" />
+                </div>
+                <label className="flex items-center justify-between gap-4 rounded-md border border-blue-200 bg-[#063b91] px-3 py-3 text-sm font-bold">
+                  Active
+                  <input type="checkbox" checked={faqForm.active} onChange={(event) => setFaqForm((form) => ({ ...form, active: event.target.checked }))} className="h-5 w-5" />
+                </label>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button className="flex h-11 items-center justify-center gap-2 rounded-md bg-white text-sm font-bold text-[#1877f2]">
+                    <Save size={17} />
+                    Save FAQ
+                  </button>
+                  <button type="button" onClick={resetFaqForm} className="h-11 rounded-md border border-blue-200 bg-[#063b91] text-sm font-bold text-white">
+                    Clear
+                  </button>
+                </div>
+              </div>
+            </form>
+
+            <div className="rounded-lg border border-blue-200 bg-[#0b4fb3] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold">FAQ List</h2>
+                  <p className="mt-1 text-xs text-white">Edit, disable, reorder, or delete saved FAQs.</p>
+                </div>
+                <Link to="/faqs" className="rounded-md bg-white px-3 py-2 text-xs font-bold text-[#1877f2]">Open FAQs</Link>
+              </div>
+              <div className="mt-4 grid gap-3">
+                {listedFaqs.map((faq) => (
+                  <article key={faq.docId || faq.id} className="rounded-lg border border-blue-200 bg-[#063b91] p-3">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold">{faq.question}</p>
+                        <p className="mt-1 text-xs text-white">{faq.category || "General"} / Order {getOrderIndex(faq)} / {faq.active === false ? "Disabled" : "Active"}</p>
+                      </div>
+                      <div className="flex shrink-0 items-center gap-1">
+                        <button type="button" onClick={() => editFaq(faq)} className="grid h-8 w-8 place-items-center rounded-md bg-[#0b4fb3]" aria-label="Edit FAQ">
+                          <Pencil size={15} />
+                        </button>
+                        <button type="button" onClick={() => toggleFaqActive(faq)} className="grid h-8 w-8 place-items-center rounded-md bg-[#0b4fb3]" aria-label="Toggle FAQ">
+                          {faq.active === false ? <Eye size={15} /> : <Lock size={15} />}
+                        </button>
+                        <button type="button" onClick={() => deleteRecord("faqs", faq)} className="grid h-8 w-8 place-items-center rounded-md bg-[#0b4fb3] text-rose-100" aria-label="Delete FAQ">
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+                    <p className="mt-2 text-xs leading-5 text-white">{faq.answer}</p>
+                    <input
+                      type="number"
+                      defaultValue={getOrderIndex(faq)}
+                      onBlur={(event) => saveFaqOrder(faq, event.target.value || getOrderIndex(faq))}
+                      className="mt-3 h-9 w-24 rounded-md border border-blue-200 bg-[#0b4fb3] px-2 text-xs font-bold text-white outline-none"
+                      aria-label={`FAQ order for ${faq.question}`}
+                    />
+                  </article>
+                ))}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeAdminSection === "brochures" && (
+          <section className="mt-5 grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
+            <form onSubmit={saveBrochure} className="rounded-lg border border-blue-200 bg-[#0b4fb3] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold">Brochure Manager</h2>
+                  <p className="mt-1 text-xs text-white">Upload, replace, delete, and assign PDF brochures to courses.</p>
+                </div>
+                <Download size={20} />
+              </div>
+              <div className="mt-5 grid gap-3">
+                <label className="grid gap-1.5 text-xs font-medium text-white">
+                  Course
+                  <select value={brochureForm.courseId} onChange={(event) => updateBrochureCourse(event.target.value)} className="h-11 rounded-md border border-blue-200 bg-[#0b4fb3] px-3 text-sm text-white outline-none">
+                    {defaultCourseSubcategories.map((course) => (
+                      <option key={course.id} value={course.id}>{course.label}</option>
+                    ))}
+                  </select>
+                </label>
+                <FormField label="PDF URL" value={brochureForm.pdfUrl} onChange={(value) => setBrochureForm((form) => ({ ...form, pdfUrl: value }))} type="url" />
+                <label className="grid gap-1.5 text-xs font-medium text-white">
+                  Upload PDF
+                  <input type="file" accept="application/pdf,.pdf" onChange={(event) => setBrochureFile(event.target.files?.[0] || null)} className="rounded-md border border-blue-200 bg-[#063b91] px-3 py-3 text-sm text-white" />
+                </label>
+                <label className="flex items-center justify-between gap-4 rounded-md border border-blue-200 bg-[#063b91] px-3 py-3 text-sm font-bold">
+                  Active
+                  <input type="checkbox" checked={brochureForm.active} onChange={(event) => setBrochureForm((form) => ({ ...form, active: event.target.checked }))} className="h-5 w-5" />
+                </label>
+                {uploadProgress > 0 && <p className="text-xs font-bold text-white">Upload progress: {uploadProgress}%</p>}
+                <button className="flex h-11 items-center justify-center gap-2 rounded-md bg-white text-sm font-bold text-[#1877f2]">
+                  <Save size={17} />
+                  Save Brochure
+                </button>
+              </div>
+            </form>
+
+            <div className="rounded-lg border border-blue-200 bg-[#0b4fb3] p-4">
+              <h2 className="text-base font-bold">Saved Brochures</h2>
+              <div className="mt-4 grid gap-3">
+                {listedBrochures.length ? listedBrochures.map((brochure) => (
+                  <article key={brochure.docId || brochure.courseId} className="rounded-lg border border-blue-200 bg-[#063b91] p-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <div className="min-w-0">
+                        <p className="truncate text-sm font-bold">{brochure.courseLabel || brochure.courseId}</p>
+                        <p className="mt-1 text-xs text-white">{brochure.active === false ? "Disabled" : "Active"} / {brochure.pdfName || "PDF link"}</p>
+                      </div>
+                      <div className="flex items-center gap-1">
+                        {brochure.pdfUrl && (
+                          <a href={brochure.pdfUrl} target="_blank" rel="noreferrer" className="grid h-8 w-8 place-items-center rounded-md bg-[#0b4fb3]" aria-label="Open brochure">
+                            <Download size={15} />
+                          </a>
+                        )}
+                        <button type="button" onClick={() => editBrochure(brochure)} className="grid h-8 w-8 place-items-center rounded-md bg-[#0b4fb3]" aria-label="Edit brochure">
+                          <Pencil size={15} />
+                        </button>
+                        <button type="button" onClick={() => deleteBrochure(brochure)} className="grid h-8 w-8 place-items-center rounded-md bg-[#0b4fb3] text-rose-100" aria-label="Delete brochure">
+                          <Trash2 size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  </article>
+                )) : (
+                  <div className="rounded-lg border border-blue-200 bg-[#063b91] p-4 text-sm font-bold text-white">No brochures saved yet.</div>
+                )}
+              </div>
+            </div>
+          </section>
+        )}
+
         {activeAdminSection === "admissions" && (
           <AdminListSection
             title="Join Class Admissions"
@@ -4351,6 +5473,7 @@ function AdminDashboard() {
                   <span>Qualification: {admission.educationQualification || "-"}</span>
                   <span>Status: {admission.status || "New"}</span>
                 </div>
+                <AdminDateTime value={admission.createdAt} />
                 {admission.message && <p className="mt-3 text-sm leading-5 text-white">{admission.message}</p>}
               </article>
             ))}
@@ -4386,6 +5509,7 @@ function AdminDashboard() {
                   <span>Expected: {applicant.expectedSalary || "-"}</span>
                   <span>Timing: {applicant.availableTiming || "-"}</span>
                 </div>
+                <AdminDateTime value={applicant.createdAt} />
                 {applicant.resumeUrl && (
                   <a href={applicant.resumeUrl} target="_blank" rel="noreferrer" className="mt-3 inline-flex text-xs font-bold text-white underline underline-offset-4">
                     View Resume
@@ -4425,6 +5549,7 @@ function AdminDashboard() {
                   <span>Offer: {company.offerSalary || "-"}</span>
                   <span>Interview: {company.interviewLocation || "-"}</span>
                 </div>
+                <AdminDateTime value={company.createdAt} />
               </article>
             ))}
           </AdminListSection>
@@ -4620,6 +5745,7 @@ function AdminDashboard() {
                     </div>
                   </div>
                   <p className="mt-2 text-sm leading-5 text-white">{message.message}</p>
+                  <AdminDateTime value={message.createdAt} />
                   <p className="mt-2 text-[11px] font-medium text-white">{message.createdAt?.toDate?.().toLocaleDateString?.() || message.createdAt}</p>
                 </article>
               ))}
@@ -4627,6 +5753,119 @@ function AdminDashboard() {
           </div>
           )}
         </section>
+        )}
+
+        {activeAdminSection === "admin-users" && isSuperAdmin && (
+          <section className="mt-5 grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
+            <form onSubmit={saveAdminUser} className="rounded-lg border border-blue-200 bg-[#0b4fb3] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold">{editingAdminUser ? "Edit Admin User" : "Add Agent"}</h2>
+                  <p className="mt-1 text-xs text-white">Create the Firebase Auth user first, then add that user's UID here.</p>
+                </div>
+                <Lock size={20} />
+              </div>
+              <div className="mt-5 grid gap-3">
+                <FormField label="Firebase Auth UID" value={adminUserForm.uid} onChange={(value) => setAdminUserForm((form) => ({ ...form, uid: value }))} required />
+                <FormField label="Email" value={adminUserForm.email} onChange={(value) => setAdminUserForm((form) => ({ ...form, email: value }))} type="email" required />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <label className="grid gap-1.5 text-xs font-medium text-white">
+                    Role
+                    <select
+                      value={adminUserForm.role}
+                      onChange={(event) => setAdminUserForm((form) => ({ ...form, role: event.target.value, permissions: event.target.value === ADMIN_ROLES.SUPER ? SUPER_ADMIN_PERMISSIONS : AGENT_PERMISSIONS }))}
+                      className="h-11 rounded-md border border-blue-200 bg-[#0b4fb3] px-3 text-sm text-white outline-none"
+                    >
+                      <option value={ADMIN_ROLES.SUPER}>Super Admin</option>
+                      <option value={ADMIN_ROLES.AGENT}>Sub Admin / Agent</option>
+                    </select>
+                  </label>
+                  <label className="grid gap-1.5 text-xs font-medium text-white">
+                    Status
+                    <select
+                      value={adminUserForm.status}
+                      onChange={(event) => setAdminUserForm((form) => ({ ...form, status: event.target.value }))}
+                      className="h-11 rounded-md border border-blue-200 bg-[#0b4fb3] px-3 text-sm text-white outline-none"
+                    >
+                      <option value="active">Active</option>
+                      <option value="disabled">Disabled</option>
+                    </select>
+                  </label>
+                </div>
+                {adminUserForm.role !== ADMIN_ROLES.SUPER && (
+                  <div className="rounded-lg border border-blue-200 bg-[#063b91] p-3">
+                    <p className="text-xs font-extrabold uppercase tracking-[0.16em] text-white">Agent Permissions</p>
+                    <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                      {AGENT_PERMISSIONS.map((permission) => (
+                        <label key={permission} className="flex items-center justify-between gap-3 rounded-md border border-blue-200 bg-[#0b4fb3] px-3 py-2 text-xs font-bold text-white">
+                          {adminSections.find((section) => section.id === permission)?.label || permission}
+                          <input
+                            type="checkbox"
+                            checked={(adminUserForm.permissions || []).includes(permission)}
+                            onChange={(event) => updateAdminUserPermission(permission, event.target.checked)}
+                            className="h-4 w-4"
+                          />
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button className="flex h-11 items-center justify-center gap-2 rounded-md bg-white text-sm font-bold text-[#1877f2]">
+                    <Save size={17} />
+                    Save Admin User
+                  </button>
+                  <button type="button" onClick={resetAdminUserForm} className="h-11 rounded-md border border-blue-200 bg-[#063b91] text-sm font-bold text-white">
+                    Clear
+                  </button>
+                </div>
+              </div>
+            </form>
+
+            <div className="grid gap-5">
+              <div className="rounded-lg border border-blue-200 bg-[#0b4fb3] p-4">
+                <h2 className="text-base font-bold">Admin Users</h2>
+                <div className="mt-4 grid gap-3">
+                  {listedAdminUsers.map((adminUser) => (
+                    <article key={adminUser.docId || adminUser.email} className="rounded-lg border border-blue-200 bg-[#063b91] p-3">
+                      <div className="flex items-start justify-between gap-3">
+                        <div className="min-w-0">
+                          <p className="truncate text-sm font-bold">{adminUser.email}</p>
+                          <p className="mt-1 text-xs text-white">
+                            {normalizeRole(adminUser.role) === ADMIN_ROLES.SUPER ? "Super Admin" : "Sub Admin / Agent"} / {adminUser.status || "active"}
+                          </p>
+                          <p className="mt-1 text-[11px] text-white">Last Login: {adminUser.lastLoginAt?.toDate?.().toLocaleString?.() || "Not recorded"}</p>
+                        </div>
+                        <div className="flex shrink-0 items-center gap-1">
+                          <button type="button" onClick={() => editAdminUser(adminUser)} className="grid h-8 w-8 place-items-center rounded-md bg-[#0b4fb3]" aria-label="Edit admin user">
+                            <Pencil size={15} />
+                          </button>
+                          <button type="button" onClick={() => disableAdminUser(adminUser)} className="grid h-8 w-8 place-items-center rounded-md bg-[#0b4fb3] text-rose-100" aria-label="Disable admin user">
+                            <Lock size={15} />
+                          </button>
+                        </div>
+                      </div>
+                      <p className="mt-2 text-xs leading-5 text-white">Permissions: {(adminUser.permissions || []).join(", ") || "None"}</p>
+                    </article>
+                  ))}
+                </div>
+              </div>
+
+              <div className="rounded-lg border border-blue-200 bg-[#0b4fb3] p-4">
+                <h2 className="text-base font-bold">Activity Logs</h2>
+                <div className="mt-4 grid gap-2">
+                  {listedAdminActivityLogs.length ? listedAdminActivityLogs.map((log) => (
+                    <div key={log.docId || log.id} className="rounded-md border border-blue-200 bg-[#063b91] px-3 py-2 text-xs font-semibold text-white">
+                      <p>{log.action || "activity"} / {log.email || log.actorEmail || "unknown"}</p>
+                      <p className="mt-1 text-[11px] text-white">{log.createdAt?.toDate?.().toLocaleString?.() || "Just now"}</p>
+                    </div>
+                  )) : (
+                    <div className="rounded-md border border-blue-200 bg-[#063b91] px-3 py-3 text-xs font-bold text-white">No activity logs yet.</div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </section>
         )}
 
         {activeAdminSection === "analytics" && (
@@ -4681,7 +5920,7 @@ function PrivacyPolicy() {
     <main className="min-h-[100svh] overflow-y-auto bg-[linear-gradient(180deg,#1877f2_0%,#0b4fb3_36%,#061f55_100%)] px-3 py-4 text-white sm:px-5 lg:px-8 lg:py-10">
       <div className="mx-auto max-w-3xl rounded-2xl border border-blue-200 bg-[#0b4fb3] p-4 shadow-2xl sm:p-5 lg:max-w-6xl lg:p-8">
         <div className="flex items-center justify-between gap-4 rounded-xl border border-blue-200 bg-[#063b91] px-4 py-3">
-          <img src="/brand/MEGATRONLOGO.png" alt="Megatron Logo" className="h-auto w-24 object-contain sm:w-28" />
+          <BrandLogo className="h-auto w-24 sm:w-28" variant="footerLogo" />
           <Link to="/" className="rounded-full bg-white px-4 py-2 text-xs font-extrabold text-[#1877f2] shadow-lg transition active:scale-95">
             Back
           </Link>
@@ -4835,6 +6074,7 @@ function App() {
         <Routes>
           <Route path="/" element={<ReelsApp />} />
           <Route path="/offer" element={<SalesFunnelPage />} />
+          <Route path="/faqs" element={<FaqPage />} />
           <Route path="/privacypolicy" element={<PrivacyPolicy />} />
           <Route path="/admin-login" element={<AdminLogin />} />
           <Route
