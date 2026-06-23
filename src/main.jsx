@@ -1834,7 +1834,7 @@ function AdmissionModal({ onClose, subcategories }) {
   );
 }
 
-function WebsiteModal({ onClose, onAdmission, onContact, onDownloadBrochure, content }) {
+function WebsiteModal({ onClose, onAdmission, onContact, onDownloadBrochure, content, banners }) {
   const safeContent = { ...defaultWebsiteContent, ...(content || {}) };
   const gallery = (Array.isArray(safeContent.gallery) ? safeContent.gallery : String(safeContent.gallery || "").split("\n")).map((item) => String(item).trim()).filter(Boolean);
   const featuredCourses = String(safeContent.featuredCourses || "").split("\n").map((item) => item.trim()).filter(Boolean);
@@ -1842,6 +1842,7 @@ function WebsiteModal({ onClose, onAdmission, onContact, onDownloadBrochure, con
   return (
     <ReelModal title="Megatron Website" onClose={onClose} screen wide>
       <div className="grid gap-4 lg:gap-6">
+        <HeaderBannerSlider banners={banners} />
         <section className="grid overflow-hidden rounded-lg border border-blue-200 bg-[#0b4fb3] lg:min-h-[22rem] lg:grid-cols-[0.95fr_1.2fr]">
           <div className="p-5 text-center lg:flex lg:flex-col lg:items-start lg:justify-center lg:p-8 lg:text-left">
             <BrandLogo className="mx-auto h-14 w-56 lg:mx-0 lg:h-16 lg:w-64" stacked />
@@ -2314,7 +2315,7 @@ function HeaderBannerSlider({ banners }) {
   const loopBanners = [...visibleBanners, ...visibleBanners];
 
   return (
-    <div className="absolute inset-x-0 top-14 z-20 mx-auto max-w-md overflow-hidden border-y border-blue-200 bg-[#063b91] lg:left-0 lg:right-0 lg:top-0 lg:max-w-none lg:rounded-t-[1.35rem]">
+    <div className="overflow-hidden rounded-lg border border-blue-200 bg-[#063b91]">
       <div className="banner-marquee flex w-max gap-3 py-2 hover:[animation-play-state:paused]">
         {loopBanners.map((banner, index) => {
           const image = (
@@ -2986,9 +2987,8 @@ function ReelsApp() {
         }`}
       >
         <Header activeCategory={activeCategory} categories={categories} />
-        <HeaderBannerSlider banners={headerBanners} />
         {activeCategory === "courses" && !activeModal.type && (
-          <div className="no-scrollbar fixed inset-x-0 top-[11rem] z-20 mx-auto flex h-[34px] max-w-md items-center gap-1 overflow-x-auto whitespace-nowrap py-0 pl-[66px] pr-2 lg:absolute lg:max-w-none">
+          <div className="no-scrollbar fixed inset-x-0 top-[4rem] z-20 mx-auto flex h-[34px] max-w-md items-center gap-1 overflow-x-auto whitespace-nowrap py-0 pl-[66px] pr-2 lg:absolute lg:max-w-none">
             <button
               type="button"
               onClick={() => selectSubcategory("all")}
@@ -3014,7 +3014,7 @@ function ReelsApp() {
         )}
         <div
           ref={scrollerRef}
-          className="no-scrollbar h-[100svh] overflow-y-auto overscroll-contain scroll-smooth snap-y snap-mandatory bg-[#063b91] pt-40 lg:h-full lg:pt-36"
+          className="no-scrollbar h-[100svh] overflow-y-auto overscroll-contain scroll-smooth snap-y snap-mandatory bg-[#063b91] lg:h-full"
         >
           {feedVideos.map((item, index) => (
             <Reel
@@ -3116,7 +3116,7 @@ function ReelsApp() {
         {activeModal.type === "contact" && <ContactModal onClose={closeOverlay} onDirection={() => openOverlay("direction")} />}
         {activeModal.type === "direction" && <DirectionModal onClose={closeOverlay} />}
         {activeModal.type === "share" && <ShareModal item={activeModal.item} onClose={closeOverlay} />}
-        {activeModal.type === "website" && <WebsiteModal onClose={closeOverlay} onAdmission={() => openOverlay("joinClass")} onContact={() => openOverlay("contact")} onDownloadBrochure={handleDownloadBrochure} content={websiteContent} />}
+        {activeModal.type === "website" && <WebsiteModal onClose={closeOverlay} onAdmission={() => openOverlay("joinClass")} onContact={() => openOverlay("contact")} onDownloadBrochure={handleDownloadBrochure} content={websiteContent} banners={headerBanners} />}
         {activeModal.type === "joinClass" && <AdmissionModal onClose={closeOverlay} subcategories={courseSubcategories} />}
       </AnimatePresence>
     </main>
