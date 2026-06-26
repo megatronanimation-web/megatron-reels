@@ -42,16 +42,25 @@ a {
   -webkit-line-clamp: 2;
 }
 
-.banner-marquee {
-  animation: banner-scroll 28s linear infinite;
-}
-
-@keyframes banner-scroll {
-  from {
-    transform: translateX(0);
+@media (min-width: 1024px) {
+  .content-view-open [data-reel-overlay] {
+    display: none !important;
   }
 
-  to {
-    transform: translateX(-50%);
+  .content-modal-shell,
+  .content-modal-shell .bg-\[\#0b4fb3\],
+  .content-modal-shell .bg-\[\#1877f2\],
+  .content-modal-shell .bg-\[\#063b91\] {
+    background-color: #061b3a !important;
+  }
+
+  .content-modal-shell .content-back-button {
+    background-color: #ffffff !important;
+    color: #061b3a !important;
+  }
+
+  .content-modal-shell .content-back-button:hover {
+    background-color: #00e5ff !important;
+    color: #061b3a !important;
   }
 }

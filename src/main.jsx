@@ -8,6 +8,9 @@ import {
   deleteDoc,
   doc,
   getDoc,
+  getDocs,
+  increment,
+  limit,
   onSnapshot,
   orderBy,
   query,
@@ -25,8 +28,10 @@ import {
   CalendarClock,
   CheckCircle2,
   ChevronLeft,
+  ArrowRight,
   Clapperboard,
   Copy,
+  Cpu,
   Eye,
   FileVideo,
   Globe2,
@@ -68,7 +73,9 @@ import {
   Navigate,
   Route,
   Routes,
+  useLocation,
   useNavigate,
+  useParams,
 } from "react-router-dom";
 import { ADMIN_EMAIL, auth, db, isFirebaseConfigured, keepAdminSession } from "./firebase";
 import "./styles.css";
@@ -113,6 +120,11 @@ const MAPS_EMBED_URL =
 const CLOUDINARY_CLOUD_NAME = import.meta.env.VITE_CLOUDINARY_CLOUD_NAME;
 const CLOUDINARY_UPLOAD_PRESET = import.meta.env.VITE_CLOUDINARY_UPLOAD_PRESET;
 const isCloudinaryConfigured = Boolean(CLOUDINARY_CLOUD_NAME && CLOUDINARY_UPLOAD_PRESET);
+const TRACKED_TRAFFIC_ROUTES = new Set(["/", "/offer", "/faqs", "/privacypolicy"]);
+const TRAFFIC_VISIT_COOLDOWN_MS = 30 * 60 * 1000;
+const FIRESTORE_READ_LOGGING = true;
+const firestoreCollectionCache = new Map();
+const firestoreDocumentCache = new Map();
 const DEFAULT_SEO_TITLE = "Megatron College of Multimedia Pune | Animation, VFX, Graphic Design, Video Editing, Digital Marketing Courses";
 const DEFAULT_SEO_DESCRIPTION =
   "Megatron College of Multimedia Pune offers professional Animation, VFX, Graphic Design, Video Editing, Digital Marketing, Web Design, UI/UX, and Multimedia courses with placement assistance.";
@@ -138,6 +150,115 @@ const DEFAULT_SEO_KEYWORDS = [
   "3D Animation Course Pune",
   "2D Animation Course Pune",
 ];
+
+const createTrackingId = () => {
+  if (typeof crypto !== "undefined" && typeof crypto.randomUUID === "function") return crypto.randomUUID();
+  return `${Date.now()}-${Math.random().toString(36).slice(2, 12)}`;
+};
+
+const getStorageValue = (storage, key) => {
+  try {
+    return storage?.getItem(key) || "";
+  } catch {
+    return "";
+  }
+};
+
+const setStorageValue = (storage, key, value) => {
+  try {
+    storage?.setItem(key, value);
+  } catch {
+    // Tracking must never interrupt the website experience.
+  }
+};
+
+const getTrafficSessionId = () => {
+  const existing = getStorageValue(window.sessionStorage, "megatronTrafficSessionId");
+  if (existing) return existing;
+  const created = createTrackingId();
+  setStorageValue(window.sessionStorage, "megatronTrafficSessionId", created);
+  return created;
+};
+
+const getTrafficLandingPage = () => {
+  const existing = getStorageValue(window.sessionStorage, "megatronTrafficLandingPage");
+  if (existing) return existing;
+  const landingPage = `${window.location.pathname}${window.location.search}`;
+  setStorageValue(window.sessionStorage, "megatronTrafficLandingPage", landingPage);
+  return landingPage;
+};
+
+const getDeviceType = () => {
+  const width = window.innerWidth || window.screen?.width || 0;
+  const userAgent = navigator.userAgent || "";
+  const isTablet = /ipad|tablet|kindle|silk/i.test(userAgent) || (width >= 768 && width < 1024);
+  const isMobile = /mobi|android|iphone|ipod/i.test(userAgent) || width < 768;
+  if (isTablet) return "Tablet";
+  if (isMobile) return "Mobile";
+  return "Desktop";
+};
+
+const getBrowserName = () => {
+  const userAgent = navigator.userAgent || "";
+  if (/edg/i.test(userAgent)) return "Edge";
+  if (/opr|opera/i.test(userAgent)) return "Opera";
+  if (/firefox/i.test(userAgent)) return "Firefox";
+  if (/safari/i.test(userAgent) && !/chrome|chromium|crios/i.test(userAgent)) return "Safari";
+  if (/chrome|chromium|crios/i.test(userAgent)) return "Chrome";
+  return "Other";
+};
+
+const getOperatingSystem = () => {
+  const userAgent = navigator.userAgent || "";
+  if (/windows/i.test(userAgent)) return "Windows";
+  if (/android/i.test(userAgent)) return "Android";
+  if (/iphone|ipad|ipod/i.test(userAgent)) return "iOS";
+  if (/mac os/i.test(userAgent)) return "macOS";
+  if (/linux/i.test(userAgent)) return "Linux";
+  return "Other";
+};
+
+const normalizeSource = (value = "") => value.toLowerCase().replace(/[^a-z0-9]/g, "");
+
+const detectTrafficSource = (utmSource, referrer) => {
+  const combined = normalizeSource(`${utmSource} ${referrer}`);
+  if (combined.includes("google")) return { sourceType: "Google", sourceName: utmSource || "Google" };
+  if (combined.includes("facebook") || combined.includes("fb") || combined.includes("meta")) return { sourceType: "Meta/Facebook", sourceName: utmSource || "Facebook" };
+  if (combined.includes("instagram") || combined.includes("ig")) return { sourceType: "Instagram", sourceName: utmSource || "Instagram" };
+  if (combined.includes("whatsapp") || combined.includes("wa")) return { sourceType: "WhatsApp", sourceName: utmSource || "WhatsApp" };
+  if (combined.includes("youtube") || combined.includes("youtu")) return { sourceType: "YouTube", sourceName: utmSource || "YouTube" };
+  if (!utmSource && !referrer) return { sourceType: "Direct", sourceName: "Direct" };
+  return { sourceType: "Other", sourceName: utmSource || referrer || "Other" };
+};
+
+const getSearchKeyword = (referrer) => {
+  try {
+    if (!referrer) return "";
+    const referrerUrl = new URL(referrer);
+    return referrerUrl.searchParams.get("q") || referrerUrl.searchParams.get("query") || referrerUrl.searchParams.get("p") || "";
+  } catch {
+    return "";
+  }
+};
+
+const getKolkataDateParts = () => {
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Kolkata",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    second: "2-digit",
+    hour12: false,
+  }).formatToParts(new Date());
+  const byType = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+  return {
+    date: `${byType.year}-${byType.month}-${byType.day}`,
+    time: `${byType.hour}:${byType.minute}:${byType.second}`,
+  };
+};
+
 const CATEGORY_SEO = {
   testimonials: {
     title: "Megatron Student Testimonials | Animation, VFX and Design Course Reviews Pune",
@@ -330,16 +451,60 @@ const defaultHeaderBanners = [
   },
 ];
 
+const BLOG_CATEGORIES = ["Animation", "Graphic Design", "VFX", "AI", "Gaming", "Digital Marketing", "Career"];
+const defaultBlogs = [
+  {
+    id: "animation-career-guide",
+    title: "How to Start a Career in Animation After 12th",
+    slug: "animation-career-guide",
+    category: "Animation",
+    shortDescription: "A practical roadmap for Gen Z students who want to enter animation, design, and multimedia careers.",
+    content: "Animation careers begin with strong fundamentals, daily practice, and a portfolio that shows storytelling, timing, design sense, and software confidence.\n\nStart with drawing, motion basics, character acting, and short projects. Then build a reel with your best work, keep improving it, and learn how studios review creative portfolios.\n\nStudents should also explore VFX, editing, AI tools, graphic design, and game art because modern studios value multi-skill creators.",
+    featuredImage: "https://images.unsplash.com/photo-1626544827763-d516dce335e2?auto=format&fit=crop&w=1200&q=80",
+    galleryImages: "",
+    videoUrl: "",
+    youtubeUrl: "",
+    author: BRAND_FULL_NAME,
+    seoTitle: "Animation Career Guide After 12th | Megatron Blogs",
+    seoDescription: "Learn how to start a career in animation after 12th with portfolio tips, skills, and creative career guidance.",
+    seoKeywords: "animation career, animation course after 12th, multimedia career Pune",
+    featured: true,
+    status: "Published",
+    publishDate: new Date().toISOString().slice(0, 10),
+  },
+  {
+    id: "ai-creative-tools",
+    title: "Why AI Skills Matter for Creative Students",
+    slug: "ai-creative-tools",
+    category: "AI",
+    shortDescription: "AI is becoming part of design, video, animation, marketing, and content creation workflows.",
+    content: "AI tools help creative students brainstorm faster, produce references, explore visual styles, and speed up repetitive production tasks.\n\nThe winning skill is not only tool usage. Students need taste, prompt clarity, design thinking, and the ability to improve AI output with human judgment.",
+    featuredImage: "https://images.unsplash.com/photo-1677442136019-21780ecad995?auto=format&fit=crop&w=1200&q=80",
+    galleryImages: "",
+    videoUrl: "",
+    youtubeUrl: "",
+    author: BRAND_FULL_NAME,
+    seoTitle: "AI Skills for Creative Students | Megatron Blogs",
+    seoDescription: "Understand why AI tools matter for design, animation, video, and digital marketing students.",
+    seoKeywords: "AI course, AI creative tools, prompt engineering students",
+    featured: false,
+    status: "Published",
+    publishDate: new Date().toISOString().slice(0, 10),
+  },
+];
+
 const ADMIN_ROLES = {
   SUPER: "super-admin",
   AGENT: "agent",
 };
-const AGENT_PERMISSIONS = ["live-chat", "messages", "admissions", "applicants", "companies"];
+const DEFAULT_AGENT_PERMISSIONS = ["live-chat", "messages", "admissions", "applicants", "companies"];
+const AGENT_PERMISSIONS = [...DEFAULT_AGENT_PERMISSIONS, "trafficCounter"];
 const SUPER_ADMIN_PERMISSIONS = [
   "reels",
   "website",
   "branding",
   "banners",
+  "blogs",
   "sales-funnel",
   "seo",
   "faqs",
@@ -351,6 +516,7 @@ const SUPER_ADMIN_PERMISSIONS = [
   "messages",
   "categories",
   "analytics",
+  "trafficCounter",
   "admin-users",
 ];
 
@@ -361,7 +527,11 @@ function normalizeRole(value = "") {
 
 function getAdminPermissions(profile) {
   if (normalizeRole(profile?.role) === ADMIN_ROLES.SUPER) return SUPER_ADMIN_PERMISSIONS;
-  const permissions = Array.isArray(profile?.permissions) ? profile.permissions : AGENT_PERMISSIONS;
+  const permissions = Array.isArray(profile?.permissions)
+    ? profile.permissions
+    : profile?.permissions && typeof profile.permissions === "object"
+      ? Object.entries(profile.permissions).filter(([, allowed]) => Boolean(allowed)).map(([permission]) => permission)
+      : DEFAULT_AGENT_PERMISSIONS;
   return permissions.filter((permission) => AGENT_PERMISSIONS.includes(permission));
 }
 
@@ -383,6 +553,27 @@ function getValidatedPaymentUrl(value = "") {
   const trimmed = String(value || "").trim();
   return isAllowedRazorpayUrl(trimmed) ? trimmed : SALES_FUNNEL_PAYMENT_URL;
 }
+
+const makeSlug = (value = "") =>
+  String(value || "")
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 90);
+
+const splitLines = (value = "") =>
+  String(value || "")
+    .split("\n")
+    .map((item) => item.trim())
+    .filter(Boolean);
+
+const getReadTime = (content = "") => {
+  const words = String(content || "").trim().split(/\s+/).filter(Boolean).length;
+  return `${Math.max(1, Math.ceil(words / 180))} min read`;
+};
+
+const getBlogYoutubeEmbedUrl = (value = "") => getYoutubeEmbedUrl(value);
 
 const demoVideos = [
   {
@@ -502,15 +693,21 @@ function normalizeCategoryId(value = "") {
   if (["testimonial", "testimonials", "testmonial", "testmonials"].includes(normalized)) return "testimonials";
   if (["course", "courses"].includes(normalized)) return "courses";
   if (normalized === "class-room") return "classroom";
+  if (["class", "classrooms", "class-room"].includes(normalized)) return "classroom";
+  if (["show-reel", "showreels"].includes(normalized)) return "showreel";
   return normalized;
 }
 
 function getReelCategoryId(reel) {
-  return normalizeCategoryId(reel?.category || reel?.categoryId || "");
+  return normalizeCategoryId(reel?.category || reel?.categoryId || reel?.categoryName || reel?.categoryLabel || reel?.section || "");
 }
 
 function categoryMatches(reel, categoryId) {
   return getReelCategoryId(reel) === normalizeCategoryId(categoryId);
+}
+
+function getReelSubcategoryId(reel) {
+  return normalizeSubcategoryId(reel?.subcategory || reel?.subcategoryId || reel?.subcategoryName || reel?.course || reel?.courseId || reel?.courseName || "");
 }
 
 function getOrderIndex(item, fallback = 999) {
@@ -523,6 +720,10 @@ function sortByOrder(items) {
 
 function sortReelsByOrder(items) {
   return [...items].sort((a, b) => getOrderIndex(a) - getOrderIndex(b) || Number(b.createdAt?.seconds || 0) - Number(a.createdAt?.seconds || 0));
+}
+
+function normalizeSubcategoryId(value = "") {
+  return slugify(value || "");
 }
 
 function mergeCategories(savedCategories) {
@@ -590,22 +791,27 @@ function withYoutubeSoundAutoplay(url = "") {
 
 function getReelMediaType(item = {}) {
   const explicitType = String(item.mediaType || item.type || "").toLowerCase();
-  if (explicitType === "youtube" || item.youtubeUrl || item.embedUrl || extractYouTubeId(item.video)) return "youtube";
-  if (explicitType === "image" || /\.(jpg|jpeg|png|webp)(\?|$)/i.test(item.video || item.poster || "")) return "image";
+  const mediaValue = item.youtubeUrl || item.originalUrl || item.youtubeLink || item.videoUrl || item.video || item.mediaUrl || item.url || item.embedUrl || "";
+  if (explicitType === "youtube" || item.youtubeUrl || item.youtubeLink || item.embedUrl || extractYouTubeId(mediaValue)) return "youtube";
+  if (explicitType === "image" || /\.(jpg|jpeg|png|webp|svg)(\?|$)/i.test(mediaValue || item.poster || item.thumbnail || item.thumbnailUrl || "")) return "image";
   return "video";
 }
 
 function getReelMediaUrl(item = {}) {
-  return item.video || item.mediaUrl || item.url || item.youtubeUrl || "";
+  return item.video || item.mediaUrl || item.videoUrl || item.originalUrl || item.youtubeUrl || item.youtubeLink || item.url || "";
 }
 
 function getReelYoutubeEmbedUrl(item = {}) {
-  return withYoutubeSoundAutoplay(item.embedUrl || getYoutubeEmbedUrl(item.youtubeUrl || item.video || item.mediaUrl || ""));
+  return withYoutubeSoundAutoplay(item.embedUrl || getYoutubeEmbedUrl(item.youtubeUrl || item.originalUrl || item.youtubeLink || item.videoUrl || item.video || item.mediaUrl || item.url || ""));
 }
 
 function getReelYoutubeThumbnail(item = {}) {
-  const id = extractYouTubeId(item.youtubeUrl || item.video || item.mediaUrl || item.embedUrl || "");
-  return item.thumbnail || item.poster || (id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : "");
+  const id = extractYouTubeId(item.youtubeUrl || item.originalUrl || item.youtubeLink || item.videoUrl || item.video || item.mediaUrl || item.embedUrl || item.url || "");
+  return item.thumbnail || item.thumbnailUrl || item.poster || (id ? `https://img.youtube.com/vi/${id}/hqdefault.jpg` : "");
+}
+
+function hasPlayableReelMedia(item = {}) {
+  return Boolean(getReelMediaUrl(item) || item.embedUrl || item.thumbnail || item.thumbnailUrl || item.poster);
 }
 
 function formatNumber(value = 0) {
@@ -903,6 +1109,100 @@ function useSeo({ activeCategory, activeSubcategory, activeReel, seoContent = de
   }, [activeCategory, activeSubcategory, activeReel, seoContent, faqs]);
 }
 
+function TrafficTracker() {
+  const location = useLocation();
+
+  React.useEffect(() => {
+    if (!db) return undefined;
+
+    const pagePath = location.pathname === "/" ? "/" : location.pathname.replace(/\/$/, "");
+    if (!TRACKED_TRAFFIC_ROUTES.has(pagePath)) return undefined;
+
+    const timeoutId = window.setTimeout(() => {
+      const sessionId = getTrafficSessionId();
+      const cooldownKey = `megatronTraffic:${sessionId}:${pagePath}`;
+      const lastTrackedAt = Number(getStorageValue(window.sessionStorage, cooldownKey));
+      const now = Date.now();
+      if (lastTrackedAt && now - lastTrackedAt < TRAFFIC_VISIT_COOLDOWN_MS) return;
+
+      const visitId = createTrackingId();
+      const searchParams = new URLSearchParams(location.search);
+      const referrer = document.referrer || "";
+      const utmSource = searchParams.get("utm_source") || "";
+      const utmMedium = searchParams.get("utm_medium") || "";
+      const utmCampaign = searchParams.get("utm_campaign") || "";
+      const utmTerm = searchParams.get("utm_term") || "";
+      const utmContent = searchParams.get("utm_content") || "";
+      const { sourceType, sourceName } = detectTrafficSource(utmSource, referrer);
+      const { date, time } = getKolkataDateParts();
+      const deviceType = getDeviceType();
+      const visitPayload = {
+        visitId,
+        sessionId,
+        timestamp: new Date(now).toISOString(),
+        date,
+        time,
+        pagePath,
+        pageTitle: document.title || BRAND_FULL_NAME,
+        deviceType,
+        browser: getBrowserName(),
+        operatingSystem: getOperatingSystem(),
+        screenSize: `${window.screen?.width || window.innerWidth}x${window.screen?.height || window.innerHeight}`,
+        referrer,
+        sourceType,
+        sourceName,
+        utmSource,
+        utmMedium,
+        utmCampaign,
+        utmTerm,
+        utmContent,
+        searchKeyword: utmTerm || getSearchKeyword(referrer),
+        landingPage: getTrafficLandingPage(),
+        createdAt: serverTimestamp(),
+      };
+
+      const deviceKey = deviceType.toLowerCase();
+      const sourceKey =
+        sourceType === "Google"
+          ? "google"
+          : sourceType === "Meta/Facebook" || sourceType === "Instagram"
+            ? "meta"
+            : sourceType === "WhatsApp"
+              ? "whatsapp"
+              : sourceType === "YouTube"
+                ? "youtube"
+                : sourceType === "Direct"
+                  ? "direct"
+                  : null;
+      const dailyPayload = {
+        date,
+        totalVisits: increment(1),
+        mobile: increment(deviceKey === "mobile" ? 1 : 0),
+        desktop: increment(deviceKey === "desktop" ? 1 : 0),
+        tablet: increment(deviceKey === "tablet" ? 1 : 0),
+        google: increment(sourceKey === "google" ? 1 : 0),
+        meta: increment(sourceKey === "meta" ? 1 : 0),
+        direct: increment(sourceKey === "direct" ? 1 : 0),
+        whatsapp: increment(sourceKey === "whatsapp" ? 1 : 0),
+        youtube: increment(sourceKey === "youtube" ? 1 : 0),
+        updatedAt: serverTimestamp(),
+      };
+
+      setStorageValue(window.sessionStorage, cooldownKey, String(now));
+      Promise.all([
+        setDoc(doc(db, "trafficVisits", visitId), visitPayload),
+        setDoc(doc(db, "trafficDaily", date), dailyPayload, { merge: true }),
+      ]).catch(() => {
+        setStorageValue(window.sessionStorage, cooldownKey, "");
+      });
+    }, 400);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [location.pathname, location.search]);
+
+  return null;
+}
+
 function BrandLogo({ className = "h-10 w-auto", withText = false, stacked = false, variant = "mainLogo" }) {
   const { data: branding } = useFirestoreDocument("branding", "main", defaultBranding);
   const logoSrc = branding?.[variant] || branding?.mainLogo || BRAND_LOGO_SRC;
@@ -932,64 +1232,188 @@ function normalizeDoc(snapshot) {
   return { ...data, docId: snapshot.id, id: data.id || snapshot.id };
 }
 
-function useFirestoreCollection(collectionName, fallbackItems, sortField = "createdAt") {
-  const [items, setItems] = React.useState(fallbackItems);
-  const [loading, setLoading] = React.useState(Boolean(db));
-
-  React.useEffect(() => {
-    if (!db) {
-      setItems(fallbackItems);
-      setLoading(false);
-      return undefined;
-    }
-
-    const source = query(collection(db, collectionName), orderBy(sortField, "desc"));
-    const unsubscribe = onSnapshot(
-      source,
-      (snapshot) => {
-        const records = snapshot.docs.map(normalizeDoc);
-        setItems(records.length ? records : fallbackItems);
-        setLoading(false);
-      },
-      () => {
-        setItems(fallbackItems);
-        setLoading(false);
-      },
-    );
-
-    return unsubscribe;
-  }, [collectionName, fallbackItems, sortField]);
-
-  return { items, loading };
+function getFirestorePagePath() {
+  if (typeof window === "undefined") return "server";
+  return window.location.pathname || "/";
 }
 
-function useFirestoreDocument(collectionName, documentId, fallbackData) {
-  const [data, setData] = React.useState(fallbackData);
-  const [loading, setLoading] = React.useState(Boolean(db));
+function logFirestoreSnapshot(key, count) {
+  if (!FIRESTORE_READ_LOGGING || typeof window === "undefined") return;
+  window.__megatronFirestoreReadCounts = window.__megatronFirestoreReadCounts || {};
+  const pagePath = getFirestorePagePath();
+  const pageCounts = window.__megatronFirestoreReadCounts[pagePath] || {};
+  pageCounts[key] = (pageCounts[key] || 0) + count;
+  window.__megatronFirestoreReadCounts[pagePath] = pageCounts;
+  console.info(`[Firestore reads] ${pagePath} ${key}: +${count}`, pageCounts);
+}
+
+function sortFirestoreRecords(records, sortField = "createdAt") {
+  return [...records].sort((a, b) => {
+    const first = a?.[sortField];
+    const second = b?.[sortField];
+    const firstSeconds = Number(first?.seconds || 0);
+    const secondSeconds = Number(second?.seconds || 0);
+    if (firstSeconds || secondSeconds) return secondSeconds - firstSeconds;
+    if (typeof first === "number" || typeof second === "number") return Number(second || 0) - Number(first || 0);
+    return String(second || "").localeCompare(String(first || ""));
+  });
+}
+
+function getCollectionCacheEntry(collectionName, fallbackItems, sortField) {
+  const key = `collection:${collectionName}:${sortField}`;
+  const existing = firestoreCollectionCache.get(key);
+  if (existing) return existing;
+
+  const entry = {
+    key,
+    collectionName,
+    sortField,
+    fallbackItems,
+    items: fallbackItems,
+    loading: Boolean(db),
+    subscribers: new Set(),
+    unsubscribe: null,
+  };
+  firestoreCollectionCache.set(key, entry);
+  return entry;
+}
+
+function notifyCollectionSubscribers(entry) {
+  entry.subscribers.forEach((subscriber) => subscriber({ items: entry.items, loading: entry.loading }));
+}
+
+function ensureCollectionListener(entry) {
+  if (!db || entry.unsubscribe) return;
+  entry.unsubscribe = onSnapshot(
+    collection(db, entry.collectionName),
+    (snapshot) => {
+      const records = sortFirestoreRecords(snapshot.docs.map(normalizeDoc), entry.sortField);
+      entry.items = records.length ? records : entry.fallbackItems;
+      entry.loading = false;
+      logFirestoreSnapshot(entry.key, snapshot.docs.length);
+      notifyCollectionSubscribers(entry);
+    },
+    (caughtError) => {
+      console.error(`Firestore read failed for ${entry.collectionName}:`, caughtError);
+      entry.items = entry.fallbackItems;
+      entry.loading = false;
+      notifyCollectionSubscribers(entry);
+    },
+  );
+}
+
+function releaseCollectionListener(entry) {
+  if (entry.subscribers.size || !entry.unsubscribe) return;
+  entry.unsubscribe();
+  entry.unsubscribe = null;
+}
+
+function useFirestoreCollection(collectionName, fallbackItems, sortField = "createdAt", enabled = true) {
+  const fallbackRef = React.useRef(fallbackItems);
+  fallbackRef.current = fallbackItems;
+  const [state, setState] = React.useState(() => {
+    const entry = firestoreCollectionCache.get(`collection:${collectionName}:${sortField}`);
+    return { items: entry?.items || fallbackItems, loading: enabled && Boolean(db) };
+  });
 
   React.useEffect(() => {
-    if (!db) {
-      setData(fallbackData);
-      setLoading(false);
+    if (!enabled || !db) {
+      setState({ items: fallbackRef.current, loading: false });
       return undefined;
     }
 
-    const unsubscribe = onSnapshot(
-      doc(db, collectionName, documentId),
-      (snapshot) => {
-        setData(snapshot.exists() ? { ...fallbackData, ...snapshot.data(), docId: snapshot.id, id: documentId } : fallbackData);
-        setLoading(false);
-      },
-      () => {
-        setData(fallbackData);
-        setLoading(false);
-      },
-    );
+    const entry = getCollectionCacheEntry(collectionName, fallbackRef.current, sortField);
+    entry.fallbackItems = fallbackRef.current;
+    const subscriber = (nextState) => setState(nextState);
+    entry.subscribers.add(subscriber);
+    setState({ items: entry.items, loading: entry.loading });
+    ensureCollectionListener(entry);
 
-    return unsubscribe;
-  }, [collectionName, documentId, fallbackData]);
+    return () => {
+      entry.subscribers.delete(subscriber);
+      releaseCollectionListener(entry);
+    };
+  }, [collectionName, enabled, sortField]);
 
-  return { data, loading };
+  return state;
+}
+
+function getDocumentCacheEntry(collectionName, documentId, fallbackData) {
+  const key = `doc:${collectionName}/${documentId}`;
+  const existing = firestoreDocumentCache.get(key);
+  if (existing) return existing;
+
+  const entry = {
+    key,
+    collectionName,
+    documentId,
+    fallbackData,
+    data: fallbackData,
+    loading: Boolean(db),
+    subscribers: new Set(),
+    unsubscribe: null,
+  };
+  firestoreDocumentCache.set(key, entry);
+  return entry;
+}
+
+function notifyDocumentSubscribers(entry) {
+  entry.subscribers.forEach((subscriber) => subscriber({ data: entry.data, loading: entry.loading }));
+}
+
+function ensureDocumentListener(entry) {
+  if (!db || entry.unsubscribe) return;
+  entry.unsubscribe = onSnapshot(
+    doc(db, entry.collectionName, entry.documentId),
+    (snapshot) => {
+      entry.data = snapshot.exists() ? { ...entry.fallbackData, ...snapshot.data(), docId: snapshot.id, id: entry.documentId } : entry.fallbackData;
+      entry.loading = false;
+      logFirestoreSnapshot(entry.key, snapshot.exists() ? 1 : 0);
+      notifyDocumentSubscribers(entry);
+    },
+    (caughtError) => {
+      console.error(`Firestore read failed for ${entry.collectionName}/${entry.documentId}:`, caughtError);
+      entry.data = entry.fallbackData;
+      entry.loading = false;
+      notifyDocumentSubscribers(entry);
+    },
+  );
+}
+
+function releaseDocumentListener(entry) {
+  if (entry.subscribers.size || !entry.unsubscribe) return;
+  entry.unsubscribe();
+  entry.unsubscribe = null;
+}
+
+function useFirestoreDocument(collectionName, documentId, fallbackData, enabled = true) {
+  const fallbackRef = React.useRef(fallbackData);
+  fallbackRef.current = fallbackData;
+  const [state, setState] = React.useState(() => {
+    const entry = firestoreDocumentCache.get(`doc:${collectionName}/${documentId}`);
+    return { data: entry?.data || fallbackData, loading: enabled && Boolean(db) };
+  });
+
+  React.useEffect(() => {
+    if (!enabled || !db) {
+      setState({ data: fallbackRef.current, loading: false });
+      return undefined;
+    }
+
+    const entry = getDocumentCacheEntry(collectionName, documentId, fallbackRef.current);
+    entry.fallbackData = fallbackRef.current;
+    const subscriber = (nextState) => setState(nextState);
+    entry.subscribers.add(subscriber);
+    setState({ data: entry.data, loading: entry.loading });
+    ensureDocumentListener(entry);
+
+    return () => {
+      entry.subscribers.delete(subscriber);
+      releaseDocumentListener(entry);
+    };
+  }, [collectionName, documentId, enabled]);
+
+  return state;
 }
 
 function linesFrom(value) {
@@ -1237,7 +1661,7 @@ function FormField({ label, value, onChange, type = "text", placeholder, require
   );
 }
 
-function ReelModal({ title, children, onClose, screen = false, wide = false }) {
+function ReelModal({ title, children, onClose, screen = false, wide = false, headerAction = null }) {
   if (screen) {
     return (
       <motion.div
@@ -1245,24 +1669,25 @@ function ReelModal({ title, children, onClose, screen = false, wide = false }) {
         animate={{ opacity: 1, y: 0 }}
         exit={{ opacity: 0, y: 22 }}
         transition={{ type: "spring", stiffness: 260, damping: 28 }}
-        className={`fixed inset-0 z-[25] mx-auto max-w-md overflow-hidden bg-[linear-gradient(180deg,#1877f2,#0b4fb3_48%,#063b91)] px-4 pb-24 pt-[5.2rem] text-white lg:left-[176px] lg:right-[156px] lg:max-w-[1200px] lg:px-6 lg:pb-8 lg:pt-6 ${
-          wide ? "lg:max-w-[1200px]" : ""
+        className={`content-modal-shell fixed inset-0 z-[25] mx-auto max-w-md overflow-hidden bg-[#061B3A] px-4 pb-24 pt-[5.2rem] text-white lg:inset-x-0 lg:bottom-auto lg:top-5 lg:h-auto lg:max-h-[calc(100vh-40px)] lg:w-[min(1100px,calc(100vw-600px))] lg:max-w-[1100px] lg:overflow-y-auto lg:rounded-[20px] lg:border lg:border-cyan-300/25 lg:bg-[#061B3A]/95 lg:p-6 lg:shadow-[0_0_42px_rgba(0,229,255,0.22),0_30px_90px_rgba(0,0,0,0.58)] lg:backdrop-blur-xl ${
+          wide ? "lg:max-w-[1100px]" : ""
         }`}
       >
-        <div className="flex h-full flex-col">
-          <div className="mb-3 flex shrink-0 items-center justify-between">
+        <div className="flex h-full min-h-0 flex-col lg:h-auto">
+          <div className="mb-3 flex shrink-0 items-center justify-between lg:sticky lg:top-0 lg:z-30 lg:rounded-xl lg:border lg:border-cyan-300/20 lg:bg-[#061B3A]/90 lg:p-2 lg:backdrop-blur">
             <button
               type="button"
               onClick={onClose}
-              className="flex h-9 items-center gap-2 rounded-full border border-blue-200 bg-[#0b4fb3] px-3 text-xs font-bold text-white transition hover:bg-[#0b4fb3] active:scale-95"
+              className="content-back-button flex h-9 items-center gap-2 rounded-full border border-blue-200 bg-[#0b4fb3] px-3 text-xs font-bold text-white opacity-100 transition hover:bg-[#0b4fb3] active:scale-95 lg:sticky lg:left-2 lg:top-2 lg:z-20 lg:h-11 lg:min-w-[110px] lg:border-0 lg:bg-white lg:px-6 lg:py-3 lg:text-sm lg:font-semibold lg:text-[#061B3A] lg:shadow-[0_6px_20px_rgba(0,0,0,0.25)] lg:hover:bg-[#00E5FF] lg:hover:text-[#061B3A]"
               aria-label="Close popup"
             >
-              <ChevronLeft size={16} />
-              Back
+              <ChevronLeft className="lg:hidden" size={16} />
+              <span className="hidden lg:inline">←</span>
+              <span>Back</span>
             </button>
-            <h2 className="truncate pl-3 text-right text-base font-extrabold">{title}</h2>
+            {headerAction || <h2 className="truncate pl-3 text-right text-base font-extrabold">{title}</h2>}
           </div>
-          <div className="no-scrollbar flex-1 overflow-y-auto pb-4">{children}</div>
+          <div className="no-scrollbar min-h-0 flex-1 overflow-y-auto pb-4 lg:overflow-visible lg:pr-1">{children}</div>
         </div>
       </motion.div>
     );
@@ -1405,7 +1830,7 @@ function JobsModal({ onClose }) {
         </div>
 
         {mode === "candidate" ? (
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid gap-3 xl:grid-cols-2">
             <FormField label="Full Name" value={candidate.fullName} onChange={(value) => updateCandidate("fullName", value)} required />
             <FormField label="Mobile Number" value={candidate.mobile} onChange={(value) => updateCandidate("mobile", value)} type="tel" required />
             <FormField label="Email" value={candidate.email} onChange={(value) => updateCandidate("email", value)} type="email" />
@@ -1444,7 +1869,7 @@ function JobsModal({ onClose }) {
             <FormField label="Available Timing" value={candidate.availableTiming} onChange={(value) => updateCandidate("availableTiming", value)} />
           </div>
         ) : (
-          <div className="grid gap-3 lg:grid-cols-2">
+          <div className="grid gap-3 xl:grid-cols-2">
             <FormField label="Company Name" value={hiring.companyName} onChange={(value) => updateHiring("companyName", value)} required />
             <FormField label="HR Name" value={hiring.hrName} onChange={(value) => updateHiring("hrName", value)} required />
             <FormField label="Mobile Number" value={hiring.mobile} onChange={(value) => updateHiring("mobile", value)} type="tel" required />
@@ -1798,11 +2223,11 @@ function AdmissionModal({ onClose, subcategories }) {
 
   return (
     <ReelModal title="Join Class" onClose={onClose} screen>
-      <form onSubmit={submit} className="grid gap-3 lg:mx-auto lg:max-w-5xl lg:grid-cols-2">
+      <form onSubmit={submit} className="grid gap-3 lg:mx-auto lg:max-w-5xl xl:grid-cols-2">
         <FormField label="Student Name" value={form.studentName} onChange={(value) => update("studentName", value)} required />
         <FormField label="Mobile Number" value={form.mobile} onChange={(value) => update("mobile", value)} type="tel" required />
         <FormField label="Email" value={form.email} onChange={(value) => update("email", value)} type="email" />
-        <div className="lg:col-span-2">
+        <div className="xl:col-span-2">
           <FormField label="Address" value={form.address} onChange={(value) => update("address", value)} textarea />
         </div>
         <label className="grid gap-1.5 text-xs font-medium text-white">
@@ -1821,11 +2246,11 @@ function AdmissionModal({ onClose, subcategories }) {
         </label>
         <FormField label="Preferred Batch Time" value={form.preferredBatchTime} onChange={(value) => update("preferredBatchTime", value)} />
         <FormField label="Education Qualification" value={form.educationQualification} onChange={(value) => update("educationQualification", value)} />
-        <div className="lg:col-span-2">
+        <div className="xl:col-span-2">
           <FormField label="Message / Query" value={form.message} onChange={(value) => update("message", value)} textarea />
         </div>
         {success && <p className="rounded-md border border-emerald-400 bg-emerald-700 px-3 py-3 text-sm text-white">{success}</p>}
-        <button disabled={loading} className="flex h-12 items-center justify-center gap-2 rounded-md bg-[#1877f2] text-sm font-bold text-white shadow-glow disabled:bg-[#0b4fb3] lg:col-span-2">
+        <button disabled={loading} className="flex h-12 items-center justify-center gap-2 rounded-md bg-[#1877f2] text-sm font-bold text-white shadow-glow disabled:bg-[#0b4fb3] xl:col-span-2">
           {loading ? <Sparkles className="animate-pulse" size={17} /> : <GraduationCap size={17} />}
           {loading ? "Submitting..." : "Submit Admission Form"}
         </button>
@@ -1840,10 +2265,25 @@ function WebsiteModal({ onClose, onAdmission, onContact, onDownloadBrochure, con
   const featuredCourses = String(safeContent.featuredCourses || "").split("\n").map((item) => item.trim()).filter(Boolean);
 
   return (
-    <ReelModal title="Megatron Website" onClose={onClose} screen wide>
+    <ReelModal
+      title=""
+      onClose={onClose}
+      screen
+      wide
+      headerAction={
+        <button
+          type="button"
+          onClick={onDownloadBrochure}
+          className="inline-flex h-9 items-center gap-2 rounded-full bg-[#00E5FF] px-4 text-xs font-black text-[#001B2E] shadow-[0_0_18px_rgba(0,229,255,0.24)] transition hover:bg-[#00B8D4]"
+        >
+          <Download size={15} />
+          Brochure
+        </button>
+      }
+    >
       <div className="grid gap-4 lg:gap-6">
         <HeaderBannerSlider banners={banners} />
-        <section className="grid overflow-hidden rounded-lg border border-blue-200 bg-[#0b4fb3] lg:min-h-[22rem] lg:grid-cols-[0.95fr_1.2fr]">
+        <section className="grid overflow-hidden rounded-lg border border-cyan-300/20 bg-[#061B3A] lg:min-h-[22rem] lg:grid-cols-[0.95fr_1.2fr]">
           <div className="p-5 text-center lg:flex lg:flex-col lg:items-start lg:justify-center lg:p-8 lg:text-left">
             <BrandLogo className="mx-auto h-14 w-56 lg:mx-0 lg:h-16 lg:w-64" stacked />
             <h2 className="mt-4 text-2xl font-extrabold lg:text-4xl">{BRAND_FULL_NAME}</h2>
@@ -1869,11 +2309,11 @@ function WebsiteModal({ onClose, onAdmission, onContact, onDownloadBrochure, con
         </section>
 
         <section className="grid gap-4 lg:grid-cols-[1.1fr_0.9fr] lg:gap-6">
-          <div className="rounded-lg border border-blue-200 bg-[#0b4fb3] p-4 lg:p-6">
+          <div className="rounded-lg border border-cyan-300/20 bg-[#061B3A] p-4 lg:p-6">
             <h3 className="text-xl font-extrabold lg:text-2xl">About {safeContent.heading}</h3>
             <p className="mt-3 text-sm leading-6 text-white lg:text-base lg:leading-7">{safeContent.about}</p>
           </div>
-          <div className="rounded-lg border border-blue-200 bg-[#1877f2] p-4 lg:p-6">
+          <div className="rounded-lg border border-cyan-300/20 bg-[#061B3A] p-4 lg:p-6">
             <h3 className="text-xl font-extrabold lg:text-2xl">Contact</h3>
             <div className="mt-3 grid gap-1 text-sm leading-6 text-white lg:text-base">
               <p>Phone: {safeContent.phone}</p>
@@ -1896,19 +2336,19 @@ function WebsiteModal({ onClose, onAdmission, onContact, onDownloadBrochure, con
           ))}
         </section>
 
-        <section className="rounded-lg border border-blue-200 bg-[#0b4fb3] p-4 lg:p-6">
+        <section className="rounded-lg border border-cyan-300/20 bg-[#061B3A] p-4 lg:p-6">
           <h3 className="text-xl font-extrabold lg:text-2xl">Courses</h3>
           <p className="mt-2 text-sm leading-6 text-white lg:text-base lg:leading-7">{safeContent.courseDetails}</p>
           <div className="mt-4 flex flex-wrap gap-2 lg:gap-3">
             {(featuredCourses.length ? featuredCourses : defaultCourseSubcategories.map((course) => course.label)).map((course) => (
-              <span key={course} className="rounded-full bg-[#1877f2] px-3 py-1.5 text-xs font-bold text-white lg:px-4 lg:py-2 lg:text-sm">
+              <span key={course} className="rounded-full bg-[#082a55] px-3 py-1.5 text-xs font-bold text-white lg:px-4 lg:py-2 lg:text-sm">
                 {course}
               </span>
             ))}
           </div>
         </section>
 
-        <section className="rounded-lg border border-blue-200 bg-[#0b4fb3] p-4 text-sm leading-6 text-white lg:p-6 lg:text-base lg:leading-7">
+        <section className="rounded-lg border border-cyan-300/20 bg-[#061B3A] p-4 text-sm leading-6 text-white lg:p-6 lg:text-base lg:leading-7">
           <p className="text-lg font-bold text-white">Follow Megatron</p>
           <div className="mt-4 flex flex-wrap gap-3">
             {SOCIAL_LINKS.map((social) => {
@@ -1927,11 +2367,15 @@ function WebsiteModal({ onClose, onAdmission, onContact, onDownloadBrochure, con
             })}
           </div>
         </section>
-        <div className="grid gap-3 sm:grid-cols-2 lg:max-w-3xl lg:grid-cols-5">
+        <div className="grid gap-3 sm:grid-cols-2 lg:max-w-5xl lg:grid-cols-6">
           <button type="button" onClick={onAdmission} className="flex h-12 items-center justify-center gap-2 rounded-md bg-[#1877f2] text-sm font-bold text-white">
             <GraduationCap size={17} />
             {safeContent.admissionCta}
           </button>
+          <Link to="/blogs" className="flex h-12 items-center justify-center gap-2 rounded-md bg-gradient-to-r from-[#00E5FF] to-[#2563EB] text-sm font-black text-[#061B3A] shadow-[0_0_22px_rgba(0,229,255,0.28)] transition hover:scale-[1.01]">
+            <BookOpen size={17} />
+            BLOGS
+          </Link>
           <Link to="/faqs" className="flex h-12 items-center justify-center gap-2 rounded-md border border-blue-200 bg-[#0b4fb3] text-sm font-bold text-white">
             <BookOpen size={17} />
             FAQ
@@ -2312,30 +2756,52 @@ function TinyPrivacyLink() {
 function HeaderBannerSlider({ banners }) {
   const activeBanners = sortByOrder(banners).filter((banner) => banner.active !== false && banner.imageUrl);
   const visibleBanners = activeBanners.length ? activeBanners : defaultHeaderBanners;
-  const loopBanners = [...visibleBanners, ...visibleBanners];
+  const [activeIndex, setActiveIndex] = React.useState(0);
+
+  React.useEffect(() => {
+    if (visibleBanners.length <= 1) return undefined;
+    const interval = window.setInterval(() => {
+      setActiveIndex((current) => (current + 1) % visibleBanners.length);
+    }, 3600);
+    return () => window.clearInterval(interval);
+  }, [visibleBanners.length]);
+
+  React.useEffect(() => {
+    setActiveIndex(0);
+  }, [visibleBanners.length]);
+  const activeBanner = visibleBanners[activeIndex] || visibleBanners[0];
+  const image = (
+    <img
+      src={activeBanner.imageUrl}
+      alt={activeBanner.title || "Megatron banner"}
+      className="h-40 w-full object-cover transition-opacity duration-500 sm:h-52 lg:h-64"
+      loading="eager"
+    />
+  );
 
   return (
-    <div className="overflow-hidden rounded-lg border border-blue-200 bg-[#063b91]">
-      <div className="banner-marquee flex w-max gap-3 py-2 hover:[animation-play-state:paused]">
-        {loopBanners.map((banner, index) => {
-          const image = (
-            <img
-              src={banner.imageUrl}
-              alt={banner.title || "Megatron banner"}
-              className="h-24 w-[19rem] rounded-md object-cover shadow-lg sm:h-28 sm:w-[22rem] lg:h-32 lg:w-[28rem]"
-              loading={index < 2 ? "eager" : "lazy"}
-            />
-          );
-          return banner.linkUrl ? (
-            <a key={`${banner.id || banner.imageUrl}-${index}`} href={banner.linkUrl} className="block shrink-0" target="_blank" rel="noreferrer">
-              {image}
-            </a>
-          ) : (
-            <div key={`${banner.id || banner.imageUrl}-${index}`} className="shrink-0">
-              {image}
-            </div>
-          );
-        })}
+    <div className="overflow-hidden rounded-lg border border-cyan-300/20 bg-[#061B3A] shadow-[0_0_24px_rgba(0,229,255,0.12)]">
+      <div className="relative">
+        {activeBanner.linkUrl ? (
+          <a href={activeBanner.linkUrl} target="_blank" rel="noreferrer" className="block">
+            {image}
+          </a>
+        ) : (
+          image
+        )}
+        {visibleBanners.length > 1 && (
+          <div className="absolute bottom-3 left-0 right-0 flex justify-center gap-2">
+            {visibleBanners.map((banner, index) => (
+              <button
+                key={banner.id || banner.imageUrl}
+                type="button"
+                onClick={() => setActiveIndex(index)}
+                className={`h-2 rounded-full transition-all ${index === activeIndex ? "w-6 bg-[#00E5FF]" : "w-2 bg-white/55"}`}
+                aria-label={`Show banner ${index + 1}`}
+              />
+            ))}
+          </div>
+        )}
       </div>
     </div>
   );
@@ -2380,7 +2846,7 @@ function FloatingButtons({ liked, onLike, item, onMessage, onShare, onWebsite, o
   );
 }
 
-function Reel({ item, isActive, onEnded, onMessage, onShare, onWebsite, onCall, onWhatsApp, onContact }) {
+function Reel({ item, isActive, hideOverlays = false, onEnded, onMessage, onShare, onWebsite, onCall, onWhatsApp, onContact }) {
   const videoRef = React.useRef(null);
   const [paused, setPaused] = React.useState(false);
   const [progress, setProgress] = React.useState(0);
@@ -2520,20 +2986,23 @@ function Reel({ item, isActive, onEnded, onMessage, onShare, onWebsite, onCall, 
         )}
       </AnimatePresence>
 
-      <motion.div
-        initial={{ opacity: 0, y: 18 }}
-        whileInView={{ opacity: 1, y: 0 }}
-        viewport={{ amount: 0.7 }}
-        transition={{ duration: 0.35 }}
-        className="absolute bottom-[5.8rem] left-3 right-[4.75rem] z-20 max-h-24 overflow-hidden text-white lg:bottom-6 lg:left-5 lg:right-5 lg:max-h-16"
-      >
-        <p className="truncate text-[11px] font-semibold leading-4 text-white lg:text-[10px]">@{item.author}</p>
-        <h2 className="mt-1 truncate text-lg font-bold leading-6 tracking-normal lg:text-sm lg:leading-5">{item.title}</h2>
-        <p className="reel-caption-clamp mt-1 max-w-[16.5rem] text-xs leading-4 text-white lg:hidden">{item.caption}</p>
-      </motion.div>
+      {!hideOverlays && (
+        <motion.div
+          data-reel-overlay="metadata"
+          initial={{ opacity: 0, y: 18 }}
+          whileInView={{ opacity: 1, y: 0 }}
+          viewport={{ amount: 0.7 }}
+          transition={{ duration: 0.35 }}
+          className="absolute bottom-[5.8rem] left-3 right-[4.75rem] z-20 max-h-24 overflow-hidden text-white lg:bottom-6 lg:left-5 lg:right-5 lg:max-h-16"
+        >
+          <p className="truncate text-[11px] font-semibold leading-4 text-white lg:text-[10px]">@{item.author}</p>
+          <h2 className="mt-1 truncate text-lg font-bold leading-6 tracking-normal lg:text-sm lg:leading-5">{item.title}</h2>
+          <p className="reel-caption-clamp mt-1 max-w-[16.5rem] text-xs leading-4 text-white lg:hidden">{item.caption}</p>
+        </motion.div>
+      )}
 
-      {isActive && (
-        <div className="absolute bottom-[4.75rem] left-0 right-0 z-30 h-1 bg-[#0b4fb3]">
+      {isActive && !hideOverlays && (
+        <div data-reel-overlay="progress" className="absolute bottom-[4.75rem] left-0 right-0 z-30 h-1 bg-[#0b4fb3]">
           <div className="h-full rounded-r-full bg-white transition-[width] duration-150" style={{ width: `${progress}%` }} />
         </div>
       )}
@@ -2541,7 +3010,7 @@ function Reel({ item, isActive, onEnded, onMessage, onShare, onWebsite, onCall, 
   );
 }
 
-function BottomNav({ categories, activeCategory, onSelectCategory, onJobs, onDirection, onJoinClass }) {
+function BottomNav({ categories, activeCategory, activeContent, onSelectCategory, onJobs, onDirection, onJoinClass }) {
   const navItems = [
     ...categories,
     { id: "join-class", label: "Join Class", icon: GraduationCap },
@@ -2553,7 +3022,7 @@ function BottomNav({ categories, activeCategory, onSelectCategory, onJobs, onDir
       <div className="grid gap-0.5" style={{ gridTemplateColumns: `repeat(${navItems.length}, minmax(0, 1fr))` }}>
         {navItems.map((category) => {
           const Icon = category.icon;
-          const active = activeCategory === category.id;
+          const active = activeContent === category.id || (!activeContent && activeCategory === category.id);
           const handleClick = () => {
             if (category.id === "jobs") {
               onJobs();
@@ -2596,7 +3065,7 @@ function BottomNav({ categories, activeCategory, onSelectCategory, onJobs, onDir
   );
 }
 
-function DesktopSidebar({ categories, activeCategory, onSelectCategory, onJobs, onDirection, onJoinClass, onInfo }) {
+function DesktopSidebar({ categories, activeCategory, activeContent, onSelectCategory, onJobs, onDirection, onJoinClass, onInfo }) {
   const navItems = [
     ...categories,
     { id: "join-class", label: "Join Class", icon: GraduationCap },
@@ -2613,58 +3082,82 @@ function DesktopSidebar({ categories, activeCategory, onSelectCategory, onJobs, 
   };
 
   return (
-    <aside className="hidden h-[calc(100svh-2rem)] rounded-xl border border-blue-200 bg-[#0b4fb3] p-2 text-white shadow-2xl lg:flex lg:flex-col">
-      <div className="border-b border-blue-200 pb-3">
-        <BrandLogo className="h-auto w-20" variant="mobileLogo" />
-        <p className="mt-2 text-[10px] font-bold uppercase tracking-[0.14em] text-white">Reels</p>
+    <aside className="hidden h-[calc(100svh-2rem)] rounded-2xl border border-cyan-300/25 bg-[#06162f]/88 p-3 text-white shadow-[0_0_34px_rgba(0,229,255,0.14)] backdrop-blur-xl lg:flex lg:flex-col">
+      <div className="rounded-xl border border-cyan-300/20 bg-[#08224b]/80 px-3 py-4 shadow-[inset_0_0_24px_rgba(0,229,255,0.08)]">
+        <BrandLogo className="mx-auto h-auto w-32" variant="desktopSidebarLogo" stacked />
       </div>
-      <div className="mt-3 grid flex-1 content-start gap-1.5">
+      <div className="mt-2 grid flex-1 content-start gap-2">
         {navItems.map((item) => {
           const Icon = item.icon;
-          const active = activeCategory === item.id;
+          const active = activeContent === item.id || (!activeContent && activeCategory === item.id);
           return (
             <button
               key={item.id}
               type="button"
               onClick={() => handleClick(item)}
-              className={`flex h-9 items-center gap-2 rounded-lg px-2 text-left text-xs font-extrabold transition active:scale-95 ${
-                active ? "bg-white text-[#1877f2]" : "bg-[#063b91] text-white hover:bg-[#1877f2]"
+              className={`group flex h-10 items-center gap-2 rounded-xl border px-3 text-left text-xs font-extrabold transition duration-200 active:scale-95 ${
+                active
+                  ? "border-[#00E5FF] bg-[#00E5FF] text-[#001B2E] shadow-[0_0_20px_rgba(0,229,255,0.36)]"
+                  : "border-cyan-300/15 bg-[#08224b]/70 text-white hover:border-cyan-300/45 hover:bg-[#0b3570] hover:shadow-[0_0_16px_rgba(0,229,255,0.18)]"
               }`}
             >
-              <Icon size={15} strokeWidth={1.9} />
+              <Icon size={16} strokeWidth={2.1} className="shrink-0 transition group-hover:scale-110" />
               {item.label}
             </button>
           );
         })}
       </div>
-      <Link to="/privacypolicy" className="mt-3 text-[9px] font-bold uppercase tracking-[0.12em] text-white underline-offset-4 hover:underline">
+      <div className="mt-3 rounded-2xl border border-cyan-300/25 bg-[linear-gradient(145deg,#09285a,#06162f)] p-3 shadow-[0_0_24px_rgba(0,229,255,0.12)]">
+        <p className="text-[10px] font-black uppercase tracking-[0.18em] text-cyan-200">Admissions Open 2026</p>
+        <div className="mt-3 grid gap-2">
+          <button type="button" onClick={onJoinClass} className="h-9 rounded-lg bg-[#2563EB] text-xs font-black text-white shadow-[0_0_18px_rgba(37,99,235,0.28)] transition hover:bg-[#1D4ED8]">
+            Apply Now
+          </button>
+          <a href={getWhatsAppUrl()} className="grid h-9 place-items-center rounded-lg bg-[#16A34A] text-xs font-black text-white shadow-[0_0_18px_rgba(22,163,74,0.22)] transition hover:bg-[#15803D]">
+            WhatsApp Now
+          </a>
+        </div>
+      </div>
+      <Link to="/privacypolicy" className="mt-3 text-center text-[9px] font-bold uppercase tracking-[0.12em] text-cyan-100 underline-offset-4 hover:underline">
         Privacy Policy
       </Link>
     </aside>
   );
 }
 
-function DesktopRightPanel({ activeReel, activeCategoryLabel, liked, onLike, onShare, onComment, onWhatsApp, onCall, onDirection }) {
+function DesktopRightPanel({ activeReel, activeCategoryLabel, activeContent, liked, onLike, onShare, onComment, onWhatsApp, onCall, onDirection, onCourses }) {
   const actions = [
     { label: "Like", icon: Heart, onClick: onLike, active: liked },
     { label: "Share", icon: Share2, onClick: onShare },
     { label: "Comment", icon: MessageSquare, onClick: onComment },
     { label: "WhatsApp", icon: WhatsAppIcon, href: getWhatsAppUrl(), onClick: onWhatsApp, whatsapp: true },
     { label: "Call", icon: Phone, href: `tel:${PHONE_NUMBER}`, onClick: onCall },
-    { label: "Direction", icon: Navigation, onClick: onDirection },
+    { label: "Direction", icon: Navigation, onClick: onDirection, active: activeContent === "direction" },
     { label: "Megatron Counselor", icon: Bot, onClick: () => window.dispatchEvent(new Event("megatron-open-live-chat")) },
+  ];
+  const popularCourses = [
+    { title: "B.Sc Animation", subtitle: "Degree pathway", icon: GraduationCap, action: onCourses },
+    { title: "B.Voc Animation", subtitle: "Career-focused degree", icon: BookOpen, action: onCourses },
+    { title: "VFX Course", subtitle: "Compositing and effects", icon: Sparkles, action: onCourses },
+    { title: "Graphic Design", subtitle: "Branding and visual design", icon: Pencil, action: onCourses },
+    { title: "Game Development", subtitle: "Interactive media skills", icon: Bot, action: onCourses },
+    { title: "AI Learning Program", subtitle: "Creative AI workflows", icon: Cpu, action: () => openDirectUrl("/offer") },
   ];
 
   return (
-    <aside className="hidden h-[calc(100svh-2rem)] overflow-y-auto rounded-xl border border-blue-200 bg-[#0b4fb3] p-2 text-white shadow-2xl lg:block">
-      <h2 className="text-sm font-extrabold">Actions</h2>
-      <p className="mt-1 text-[10px] font-semibold leading-4 text-white">Current reel controls.</p>
+    <aside className="hidden h-[calc(100svh-2rem)] overflow-y-auto rounded-2xl border border-cyan-300/25 bg-[#06162f]/88 p-3 text-white shadow-[0_0_34px_rgba(0,229,255,0.14)] backdrop-blur-xl lg:block">
+      <h2 className="text-[11px] font-black uppercase tracking-[0.22em] text-cyan-200">Actions</h2>
+      <p className="mt-1 text-[10px] font-semibold leading-4 text-white/75">Current reel controls.</p>
 
-      <div className="mt-3 grid grid-cols-2 gap-1.5">
+      <div className="mt-3 grid grid-cols-2 gap-2">
         {actions.map((action) => {
           const Icon = action.icon;
-          const className = `flex h-10 flex-col items-center justify-center gap-0.5 rounded-lg border-2 bg-transparent text-center text-[9px] font-extrabold leading-none shadow-[0_0_10px_rgba(255,255,255,0.16)] transition hover:scale-105 hover:shadow-[0_0_18px_rgba(255,255,255,0.34)] active:scale-95 ${
-            action.whatsapp ? "border-[#25D366] text-[#25D366]" : "border-white/90 text-white"
+          const className = `flex h-14 flex-col items-center justify-center gap-1 rounded-xl border text-center text-[9px] font-extrabold leading-none shadow-[inset_0_0_16px_rgba(255,255,255,0.03)] transition hover:-translate-y-0.5 hover:shadow-[0_0_18px_rgba(0,229,255,0.22)] active:scale-95 ${
+            action.active
+              ? "border-[#00E5FF] bg-[#00E5FF] text-[#001B2E]"
+              : action.whatsapp
+                ? "border-[#25D366]/60 bg-[#08224b]/72 text-[#25D366]"
+                : "border-cyan-300/20 bg-[#08224b]/72 text-white hover:border-cyan-300/55"
           }`;
           const content = (
             <>
@@ -2687,21 +3180,74 @@ function DesktopRightPanel({ activeReel, activeCategoryLabel, liked, onLike, onS
         })}
       </div>
 
-      <section className="mt-3 rounded-lg border border-blue-200 bg-[#063b91] p-2">
-        <p className="text-[9px] font-bold uppercase tracking-[0.12em] text-white">Current Reel</p>
-        <h3 className="mt-1.5 truncate text-sm font-extrabold leading-tight">{activeReel?.title || "Megatron Reel"}</h3>
-        <p className="reel-caption-clamp mt-1.5 text-[10px] font-semibold leading-4 text-white">{activeReel?.caption || "Watch Megatron multimedia updates, courses, and student stories."}</p>
+      <section className="mt-4 rounded-2xl border border-cyan-300/20 bg-[#08224b]/70 p-3">
+        <p className="text-[9px] font-black uppercase tracking-[0.18em] text-cyan-200">Current Reel</p>
+        <h3 className="mt-2 truncate text-sm font-extrabold leading-tight">{activeReel?.title || "Megatron Reel"}</h3>
+        <p className="reel-caption-clamp mt-2 text-[10px] font-semibold leading-4 text-white/78">{activeReel?.caption || "Watch Megatron multimedia updates, courses, and student stories."}</p>
         <div className="mt-2 flex flex-wrap gap-1">
-          <span className="rounded-full bg-white px-2 py-0.5 text-[9px] font-extrabold text-[#1877f2]">{activeCategoryLabel}</span>
-          <span className="rounded-full bg-[#1877f2] px-2 py-0.5 text-[9px] font-extrabold text-white">@{activeReel?.author || "Megatron"}</span>
+          <span className="rounded-full bg-[#00E5FF] px-2 py-0.5 text-[9px] font-extrabold text-[#031226]">{activeCategoryLabel}</span>
+          <span className="rounded-full bg-white/10 px-2 py-0.5 text-[9px] font-extrabold text-white">@{activeReel?.author || "Megatron"}</span>
         </div>
       </section>
 
-      <section className="mt-3 rounded-lg border border-blue-200 bg-[#1877f2] p-2">
-        <h3 className="text-xs font-extrabold">Admissions</h3>
-        <p className="mt-1 text-[10px] font-semibold leading-4 text-white">Phone: {PHONE_NUMBER}<br />KK Market, Satra Road, Pune</p>
+      <section className="mt-4">
+        <h2 className="text-[11px] font-black uppercase tracking-[0.22em] text-cyan-200">Popular Courses</h2>
+        <div className="mt-2 grid gap-2">
+          {popularCourses.map((course) => {
+            const Icon = course.icon;
+            return (
+              <button key={course.title} type="button" onClick={course.action} className="group flex items-center gap-2 rounded-xl border border-cyan-300/18 bg-[#08224b]/72 p-2 text-left transition hover:border-cyan-300/55 hover:bg-[#0b3570] hover:shadow-[0_0_18px_rgba(0,229,255,0.18)]">
+                <span className="grid h-9 w-9 shrink-0 place-items-center rounded-lg bg-[#00E5FF]/12 text-[#00E5FF]">
+                  <Icon size={17} />
+                </span>
+                <span className="min-w-0 flex-1">
+                  <span className="block truncate text-[11px] font-black text-white">{course.title}</span>
+                  <span className="block truncate text-[9px] font-semibold text-white/62">{course.subtitle}</span>
+                </span>
+                <ArrowRight size={14} className="text-cyan-200 transition group-hover:translate-x-0.5" />
+              </button>
+            );
+          })}
+        </div>
+      </section>
+
+      <section className="mt-4 rounded-2xl border border-cyan-300/25 bg-[linear-gradient(145deg,#0b3a76,#06162f)] p-3 shadow-[0_0_24px_rgba(0,229,255,0.16)]">
+        <h3 className="text-[11px] font-black uppercase tracking-[0.18em] text-cyan-200">Admission Helpline</h3>
+        <a href={`tel:${PHONE_NUMBER}`} className="mt-2 block text-xl font-black text-white">{PHONE_NUMBER}</a>
+        <p className="mt-1 text-[10px] font-semibold leading-4 text-white/75">KK Market, Satara Road, Pune</p>
       </section>
     </aside>
+  );
+}
+
+function DesktopStatsBar({ onCourses }) {
+  const stats = [
+    { value: "5000+", label: "Students Trained", icon: Users },
+    { value: "Multimedia Courses", label: "Career Programs", icon: GraduationCap, onClick: onCourses },
+    { value: "100+", label: "Placement Support", icon: BriefcaseBusiness },
+    { value: "15+", label: "Years of Excellence", icon: Sparkles },
+  ];
+
+  return (
+    <section className="hidden grid-cols-4 gap-3 lg:grid">
+      {stats.map((stat) => {
+        const Icon = stat.icon;
+        return (
+          <button
+            key={stat.label}
+            type="button"
+            onClick={stat.onClick}
+            className={`rounded-2xl border border-cyan-300/20 bg-[#06162f]/82 px-4 py-3 text-center shadow-[0_0_22px_rgba(0,229,255,0.12)] backdrop-blur-xl ${
+              stat.onClick ? "transition hover:border-cyan-300/55 hover:bg-[#0b3570]" : "cursor-default"
+            }`}
+          >
+            <Icon className="mx-auto text-[#00E5FF]" size={18} />
+            <p className="mt-2 text-sm font-black text-white xl:text-base">{stat.value}</p>
+            <p className="mt-0.5 text-[10px] font-bold uppercase tracking-[0.08em] text-white/65">{stat.label}</p>
+          </button>
+        );
+      })}
+    </section>
   );
 }
 
@@ -2719,10 +3265,11 @@ function ReelsApp() {
   const { items: firestoreVideos } = useFirestoreCollection("reels", demoVideos);
   const { items: savedCategories } = useFirestoreCollection("categories", [], "label");
   const { items: savedSubcategories } = useFirestoreCollection("courseSubcategories", [], "label");
-  const { items: websiteContentItems } = useFirestoreCollection("websiteContent", defaultWebsiteContentItems);
-  const { items: brochures } = useFirestoreCollection("brochures", [], "courseLabel");
-  const { items: faqItems } = useFirestoreCollection("faqs", defaultFaqs, "orderIndex");
-  const { items: headerBanners } = useFirestoreCollection("headerBanners", defaultHeaderBanners, "orderIndex");
+  const infoModalOpen = activeModal.type === "website";
+  const { items: websiteContentItems } = useFirestoreCollection("websiteContent", defaultWebsiteContentItems, "createdAt", infoModalOpen);
+  const { items: brochures } = useFirestoreCollection("brochures", [], "courseLabel", infoModalOpen);
+  const { items: faqItems } = useFirestoreCollection("faqs", defaultFaqs, "orderIndex", infoModalOpen);
+  const { items: headerBanners } = useFirestoreCollection("headerBanners", defaultHeaderBanners, "orderIndex", infoModalOpen);
   const { data: branding } = useFirestoreDocument("branding", "main", defaultBranding);
   const { data: seoContent } = useFirestoreDocument("seoContent", "main", defaultSeoContent);
   const { data: playbackSettings } = useFirestoreDocument("settings", "playback", defaultPlaybackSettings);
@@ -2734,7 +3281,7 @@ function ReelsApp() {
     () => categories.map((category) => normalizeCategoryId(category.id)).filter(Boolean),
     [categories],
   );
-  const publishedVideos = firestoreVideos.filter((video) => video.status !== "Draft" && (video.video || video.mediaUrl || video.youtubeUrl || video.embedUrl));
+  const publishedVideos = firestoreVideos.filter((video) => String(video.status || "Published").toLowerCase() !== "draft" && hasPlayableReelMedia(video));
   const hasSavedReels = React.useMemo(
     () => firestoreVideos.some((video) => !String(video.id || "").startsWith("demo-")),
     [firestoreVideos],
@@ -2751,7 +3298,7 @@ function ReelsApp() {
   );
   const baseVideos = getCategoryBaseVideos(activeCategory);
   const visibleVideos = activeCategory === "courses" && activeSubcategory !== "all"
-    ? baseVideos.filter((video) => (video.subcategory || "animation") === activeSubcategory)
+    ? baseVideos.filter((video) => (getReelSubcategoryId(video) || "animation") === normalizeSubcategoryId(activeSubcategory))
     : baseVideos;
   const feedVideos = React.useMemo(
     () => visibleVideos.map((video, index) => ({ ...video, feedId: `${video.id}-${activeCategory}-${activeSubcategory}-${index}` })),
@@ -2815,9 +3362,12 @@ function ReelsApp() {
   }, [clearCategoryTransition, closeOverlay]);
 
   const handleDownloadBrochure = React.useCallback(() => {
-    const brochure = brochures.find((item) => item.active !== false && item.pdfUrl);
+    const activeBrochures = brochures.filter((item) => item.active !== false && item.pdfUrl);
+    const brochure =
+      activeBrochures.find((item) => ["general", "default", "main", "all"].includes(String(item.courseId || "").toLowerCase())) ||
+      activeBrochures[0];
     if (!brochure) {
-      setCallNotice("Course brochure is not available yet. Please contact Megatron for the latest brochure.");
+      setCallNotice("Brochure will be available soon.");
       window.clearTimeout(callNoticeTimeoutRef.current);
       callNoticeTimeoutRef.current = window.setTimeout(() => setCallNotice(""), 4200);
       return;
@@ -2960,18 +3510,31 @@ function ReelsApp() {
   }, [activeIndex, feedVideos.length, transitionToNextCategory]);
 
   const isDesktopContentOpen = Boolean(activeModal.type);
+  const activeContentNav =
+    activeModal.type === "job"
+      ? "jobs"
+      : activeModal.type === "joinClass"
+        ? "join-class"
+        : activeModal.type === "direction"
+          ? "direction"
+          : activeModal.type === "website"
+            ? "info"
+            : "";
 
   return (
     <main
-      className={`mx-auto h-[100svh] max-w-md overflow-hidden bg-[#063b91] text-white sm:border-x sm:border-blue-200 lg:grid lg:w-full lg:max-w-none lg:justify-between lg:gap-3 lg:border-x-0 lg:bg-[radial-gradient(circle_at_50%_10%,#1877f2_0,#0b2f73_36%,#061638_100%)] lg:p-4 ${
+      className={`mx-auto h-[100svh] max-w-md overflow-hidden bg-[#063b91] text-white sm:border-x sm:border-blue-200 lg:grid lg:w-full lg:max-w-none lg:justify-between lg:gap-5 lg:border-x-0 lg:bg-[radial-gradient(circle_at_50%_0%,rgba(0,229,255,0.18)_0,rgba(8,25,56,0.98)_34%,#020817_100%)] lg:p-5 ${
+        isDesktopContentOpen ? "content-view-open" : ""
+      } ${
         isDesktopContentOpen
-          ? "lg:grid-cols-[150px_minmax(0,1fr)_130px] xl:grid-cols-[160px_minmax(800px,1fr)_140px] 2xl:grid-cols-[160px_minmax(900px,1fr)_140px]"
-          : "lg:grid-cols-[170px_500px_170px] xl:grid-cols-[180px_540px_180px] 2xl:grid-cols-[180px_580px_180px]"
+          ? "lg:grid-cols-[220px_minmax(0,1fr)_280px] xl:grid-cols-[240px_minmax(820px,1fr)_300px] 2xl:grid-cols-[260px_minmax(920px,1fr)_320px]"
+          : "lg:grid-cols-[220px_minmax(520px,620px)_280px] xl:grid-cols-[240px_minmax(580px,680px)_300px] 2xl:grid-cols-[260px_minmax(620px,760px)_320px]"
       }`}
     >
       <DesktopSidebar
         categories={categories}
         activeCategory={activeCategory}
+        activeContent={activeContentNav}
         onSelectCategory={selectCategory}
         onJobs={() => openOverlay("job")}
         onJoinClass={() => openOverlay("joinClass")}
@@ -2979,11 +3542,12 @@ function ReelsApp() {
         onInfo={() => openOverlay("website")}
       />
 
+      <div className="contents lg:flex lg:h-[calc(100svh-2.5rem)] lg:min-w-0 lg:flex-col lg:gap-3">
       <section
-        className={`relative mx-auto h-[100svh] w-full max-w-md overflow-hidden bg-[#063b91] lg:h-[calc(100svh-2rem)] lg:rounded-[1.35rem] lg:border lg:border-blue-200 lg:shadow-2xl ${
+        className={`relative mx-auto h-[100svh] w-full max-w-md overflow-hidden bg-[#063b91] lg:min-h-0 lg:flex-1 lg:rounded-[1.75rem] lg:border lg:border-cyan-300/35 lg:bg-[#020817] lg:shadow-[0_0_44px_rgba(0,229,255,0.24),0_28px_80px_rgba(0,0,0,0.55)] ${
           isDesktopContentOpen
             ? "lg:w-full lg:max-w-[1200px]"
-            : "lg:w-[500px] lg:max-w-[500px] xl:w-[540px] xl:max-w-[540px] 2xl:w-[580px] 2xl:max-w-[580px]"
+            : "lg:w-full lg:max-w-none"
         }`}
       >
         <Header activeCategory={activeCategory} categories={categories} />
@@ -3021,6 +3585,7 @@ function ReelsApp() {
               key={item.feedId}
               item={item}
               isActive={index === activeIndex && !activeModal.type && !categoryTransition}
+              hideOverlays={Boolean(activeModal.type)}
               onEnded={scrollToNextReel}
               onMessage={(reel) => openOverlay("message", reel)}
               onShare={(reel) => openOverlay("share", reel)}
@@ -3034,16 +3599,20 @@ function ReelsApp() {
         <BottomNav
           categories={categories}
           activeCategory={activeCategory}
+          activeContent={activeContentNav}
           onSelectCategory={selectCategory}
           onJobs={() => openOverlay("job")}
           onJoinClass={() => openOverlay("joinClass")}
           onDirection={() => openOverlay("direction")}
         />
       </section>
+      {!isDesktopContentOpen && <DesktopStatsBar onCourses={() => selectCategory("courses")} />}
+      </div>
 
       <DesktopRightPanel
         activeReel={activeReel}
         activeCategoryLabel={getCategoryLabel(activeCategory)}
+        activeContent={activeContentNav}
         liked={desktopLiked}
         onLike={() => setDesktopLiked((value) => !value)}
         onShare={() => openOverlay("share", activeReel)}
@@ -3051,6 +3620,7 @@ function ReelsApp() {
         onWhatsApp={handleWhatsAppAction}
         onCall={handleCallAction}
         onDirection={() => openOverlay("direction")}
+        onCourses={() => selectCategory("courses")}
       />
 
       <LiveChatWidget currentReel={activeReel} currentCategory={getCategoryLabel(activeCategory)} />
@@ -3074,6 +3644,13 @@ function ReelsApp() {
         <p>{safeSeoContent.placementHighlights}</p>
       </section>
       <TinyPrivacyLink />
+      <Link
+        to="/admin"
+        className="fixed right-16 top-5 z-[85] hidden h-9 w-9 place-items-center rounded-full border border-cyan-300/50 bg-[#06162f] text-[#00E5FF] shadow-[0_0_18px_rgba(0,229,255,0.28)] transition hover:scale-105 lg:grid"
+        aria-label="Open admin panel"
+      >
+        <Lock size={15} />
+      </Link>
       <Link
         to="/offer"
         className="fixed right-5 top-5 z-[85] hidden h-9 w-9 place-items-center rounded-full border border-[#F5B400] bg-[#050505] text-[0px] text-[#F5B400] shadow-[0_0_18px_rgba(245,180,0,0.55)] transition hover:scale-105 lg:grid"
@@ -3309,6 +3886,202 @@ function SalesFunnelPage() {
   );
 }
 
+function BlogCard({ blog, featured = false }) {
+  return (
+    <article className={`overflow-hidden rounded-2xl border border-cyan-300/20 bg-white/8 shadow-[0_0_24px_rgba(0,229,255,0.12)] backdrop-blur ${featured ? "lg:grid lg:grid-cols-[1.05fr_0.95fr]" : ""}`}>
+      <img src={blog.featuredImage || BRAND_LOGO_SRC} alt={blog.title} className={`${featured ? "h-72 lg:h-full" : "h-52"} w-full object-cover`} loading="lazy" />
+      <div className="grid gap-3 p-4 lg:p-5">
+        <div className="flex flex-wrap items-center gap-2 text-[11px] font-black uppercase tracking-[0.14em]">
+          <span className="rounded-full bg-[#00E5FF] px-3 py-1 text-[#061B3A]">{blog.category || "Career"}</span>
+          <span className="text-cyan-100">{blog.publishDate || ""}</span>
+          <span className="text-cyan-100">{getReadTime(blog.content)}</span>
+        </div>
+        <h2 className={`${featured ? "text-3xl lg:text-4xl" : "text-xl"} font-black leading-tight text-white`}>{blog.title}</h2>
+        <p className="text-sm font-semibold leading-6 text-white/75">{blog.shortDescription}</p>
+        <div className="flex items-center justify-between gap-3 pt-2">
+          <p className="truncate text-xs font-bold text-cyan-100">By {blog.author || BRAND_FULL_NAME}</p>
+          <Link to={`/blogs/${blog.slug || blog.id}`} className="rounded-full bg-[#00E5FF] px-4 py-2 text-xs font-black text-[#061B3A] shadow-[0_0_18px_rgba(0,229,255,0.28)] transition hover:bg-[#00B8D4]">
+            Read More
+          </Link>
+        </div>
+      </div>
+    </article>
+  );
+}
+
+function BlogsPage() {
+  const { items: blogItems } = useFirestoreCollection("blogs", defaultBlogs, "publishDate");
+  const [search, setSearch] = React.useState("");
+  const [category, setCategory] = React.useState("All");
+  const publishedBlogs = React.useMemo(
+    () =>
+      blogItems
+        .filter((blog) => blog.status !== "Draft")
+        .sort((a, b) => String(b.publishDate || "").localeCompare(String(a.publishDate || ""))),
+    [blogItems],
+  );
+  const filteredBlogs = publishedBlogs.filter((blog) => {
+    const matchesCategory = category === "All" || blog.category === category;
+    const text = `${blog.title} ${blog.shortDescription} ${blog.category} ${blog.seoKeywords}`.toLowerCase();
+    return matchesCategory && text.includes(search.toLowerCase());
+  });
+  const featuredBlog = filteredBlogs.find((blog) => blog.featured) || filteredBlogs[0];
+  const remainingBlogs = filteredBlogs.filter((blog) => blog !== featuredBlog);
+
+  usePageMeta({
+    title: "Megatron Blogs | Animation, AI, Design, Gaming and Career Insights",
+    description: "Read Megatron blogs on animation, AI, VFX, graphic design, gaming, digital marketing, and creative career guidance.",
+    keywords: "Megatron blogs, animation blog, AI blog, VFX blog, design career blog",
+    image: featuredBlog?.featuredImage || BRAND_LOGO_SRC,
+    path: "/blogs",
+  });
+
+  return (
+    <main className="min-h-[100svh] bg-[#061B3A] px-4 py-5 text-white sm:px-6 lg:px-10 lg:py-8">
+      <div className="mx-auto max-w-6xl">
+        <header className="flex items-center justify-between gap-4">
+          <BrandLogo className="h-10 w-28" />
+          <Link to="/" className="inline-flex h-10 items-center gap-2 rounded-full border border-cyan-300/30 px-4 text-xs font-black text-cyan-100">
+            <ChevronLeft size={16} />
+            Reels
+          </Link>
+        </header>
+        <section className="mt-6 rounded-3xl border border-cyan-300/20 bg-[radial-gradient(circle_at_top,#0a3a70,#061B3A_62%)] p-5 shadow-[0_0_42px_rgba(0,229,255,0.16)] lg:p-8">
+          <p className="text-xs font-black uppercase tracking-[0.22em] text-[#00E5FF]">Megatron Journal</p>
+          <h1 className="mt-3 text-4xl font-black leading-tight lg:text-6xl">Megatron Blogs</h1>
+          <p className="mt-3 max-w-3xl text-base font-semibold leading-7 text-white/75">Latest Animation, AI, Design, Gaming & Career Insights</p>
+          <div className="mt-6 grid gap-3 lg:grid-cols-[1fr_auto]">
+            <div className="flex items-center gap-2 rounded-2xl border border-cyan-300/25 bg-black/20 px-4 py-3">
+              <Search size={18} className="text-[#00E5FF]" />
+              <input value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Search blogs by title, keyword, category" className="w-full bg-transparent text-sm font-bold text-white outline-none placeholder:text-white/45" />
+            </div>
+          </div>
+          <div className="mt-4 flex gap-2 overflow-x-auto pb-1">
+            {["All", ...BLOG_CATEGORIES].map((item) => (
+              <button key={item} type="button" onClick={() => setCategory(item)} className={`shrink-0 rounded-full px-4 py-2 text-xs font-black transition ${category === item ? "bg-[#00E5FF] text-[#061B3A]" : "bg-white/8 text-white hover:bg-white/14"}`}>
+                {item}
+              </button>
+            ))}
+          </div>
+        </section>
+
+        <section className="mt-6 grid gap-5">
+          {featuredBlog && <BlogCard blog={featuredBlog} featured />}
+          <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+            {remainingBlogs.map((blog) => <BlogCard key={blog.docId || blog.id} blog={blog} />)}
+          </div>
+          {!filteredBlogs.length && <p className="rounded-2xl border border-cyan-300/20 bg-white/8 p-5 text-sm font-bold text-white/75">No blogs found.</p>}
+        </section>
+      </div>
+    </main>
+  );
+}
+
+function BlogDetailPage() {
+  const { slug } = useParams();
+  const { items: blogItems } = useFirestoreCollection("blogs", defaultBlogs, "publishDate");
+  const blog = blogItems.find((item) => (item.slug || item.id) === slug) || defaultBlogs.find((item) => item.slug === slug);
+  const relatedBlogs = blogItems.filter((item) => (item.slug || item.id) !== slug && item.status !== "Draft" && item.category === blog?.category).slice(0, 3);
+  const gallery = splitLines(blog?.galleryImages);
+  const youtubeEmbed = getBlogYoutubeEmbedUrl(blog?.youtubeUrl);
+  const pageUrl = typeof window !== "undefined" ? window.location.href : getAbsoluteUrl(`/blogs/${slug}`);
+
+  usePageMeta({
+    title: blog?.seoTitle || `${blog?.title || "Blog"} | Megatron Blogs`,
+    description: blog?.seoDescription || blog?.shortDescription || "Megatron blog article.",
+    keywords: blog?.seoKeywords || `${blog?.category || "creative career"}, Megatron blog`,
+    image: blog?.featuredImage || BRAND_LOGO_SRC,
+    path: `/blogs/${slug}`,
+    author: blog?.author || defaultSeoContent.authorName,
+  });
+
+  React.useEffect(() => {
+    if (!blog) return;
+    let schemaScript = document.head.querySelector("#megatron-blog-jsonld");
+    if (!schemaScript) {
+      schemaScript = document.createElement("script");
+      schemaScript.id = "megatron-blog-jsonld";
+      schemaScript.type = "application/ld+json";
+      document.head.appendChild(schemaScript);
+    }
+    schemaScript.textContent = JSON.stringify({
+      "@context": "https://schema.org",
+      "@type": "BlogPosting",
+      headline: blog.title,
+      description: blog.shortDescription,
+      image: blog.featuredImage,
+      author: { "@type": "Person", name: blog.author || BRAND_FULL_NAME },
+      publisher: { "@type": "Organization", name: BRAND_FULL_NAME, logo: { "@type": "ImageObject", url: toAbsoluteUrl(BRAND_LOGO_SRC) } },
+      datePublished: blog.publishDate,
+      mainEntityOfPage: pageUrl,
+    });
+  }, [blog, pageUrl]);
+
+  const copyLink = async () => {
+    try {
+      await navigator.clipboard.writeText(pageUrl);
+    } catch {
+      window.prompt("Copy blog link", pageUrl);
+    }
+  };
+
+  if (!blog) return <Navigate to="/blogs" replace />;
+
+  return (
+    <main className="min-h-[100svh] bg-[#061B3A] px-4 py-5 text-white sm:px-6 lg:px-10 lg:py-8">
+      <article className="mx-auto max-w-4xl">
+        <Link to="/blogs" className="inline-flex h-10 items-center gap-2 rounded-full border border-cyan-300/30 px-4 text-xs font-black text-cyan-100">
+          <ChevronLeft size={16} />
+          Blogs
+        </Link>
+        <header className="mt-5 overflow-hidden rounded-3xl border border-cyan-300/20 bg-white/8 shadow-[0_0_42px_rgba(0,229,255,0.14)]">
+          <img src={blog.featuredImage || BRAND_LOGO_SRC} alt={blog.title} className="h-72 w-full object-cover lg:h-[28rem]" loading="eager" />
+          <div className="p-5 lg:p-8">
+            <div className="flex flex-wrap gap-2 text-[11px] font-black uppercase tracking-[0.14em]">
+              <span className="rounded-full bg-[#00E5FF] px-3 py-1 text-[#061B3A]">{blog.category}</span>
+              <span className="text-cyan-100">{blog.publishDate}</span>
+              <span className="text-cyan-100">{getReadTime(blog.content)}</span>
+            </div>
+            <h1 className="mt-4 text-3xl font-black leading-tight lg:text-5xl">{blog.title}</h1>
+            <p className="mt-3 text-sm font-semibold leading-6 text-white/75">By {blog.author || BRAND_FULL_NAME}</p>
+            <div className="mt-5 flex flex-wrap gap-2">
+              <button type="button" onClick={() => navigator.share?.({ title: blog.title, url: pageUrl })} className="rounded-full bg-white/10 px-4 py-2 text-xs font-black">Share</button>
+              <a href={`https://wa.me/?text=${encodeURIComponent(`${blog.title} ${pageUrl}`)}`} className="rounded-full bg-[#16A34A] px-4 py-2 text-xs font-black text-white">WhatsApp</a>
+              <button type="button" onClick={copyLink} className="rounded-full bg-[#00E5FF] px-4 py-2 text-xs font-black text-[#061B3A]">Copy Link</button>
+            </div>
+          </div>
+        </header>
+        <section className="mt-6 rounded-3xl border border-cyan-300/20 bg-white/8 p-5 text-base font-medium leading-8 text-white/84 lg:p-8">
+          {splitLines(blog.content).map((block) =>
+            block.startsWith("#") ? (
+              <h2 key={block} className="mt-6 text-2xl font-black text-white">{block.replace(/^#+\s*/, "")}</h2>
+            ) : block.startsWith("-") ? (
+              <p key={block} className="pl-3">* {block.replace(/^-+\s*/, "")}</p>
+            ) : (
+              <p key={block} className="mt-4">{block}</p>
+            ),
+          )}
+          {youtubeEmbed && <iframe className="mt-6 aspect-video w-full rounded-2xl border border-cyan-300/20" src={youtubeEmbed} title={blog.title} allowFullScreen loading="lazy" />}
+          {blog.videoUrl && <video className="mt-6 w-full rounded-2xl border border-cyan-300/20" src={blog.videoUrl} controls preload="metadata" />}
+          {gallery.length > 0 && (
+            <div className="mt-6 grid gap-3 sm:grid-cols-2">
+              {gallery.map((image) => <img key={image} src={image} alt={blog.title} className="h-52 w-full rounded-2xl object-cover" loading="lazy" />)}
+            </div>
+          )}
+        </section>
+        {relatedBlogs.length > 0 && (
+          <section className="mt-8">
+            <h2 className="text-2xl font-black">Related Blogs</h2>
+            <div className="mt-4 grid gap-5 md:grid-cols-3">
+              {relatedBlogs.map((item) => <BlogCard key={item.docId || item.id} blog={item} />)}
+            </div>
+          </section>
+        )}
+      </article>
+    </main>
+  );
+}
+
 function FaqPage() {
   const { items: faqItems } = useFirestoreCollection("faqs", defaultFaqs, "orderIndex");
   const activeFaqs = React.useMemo(
@@ -3439,6 +4212,341 @@ function AdminListSection({ title, description, rows, search, setSearch, onExpor
   );
 }
 
+const TRAFFIC_FILTERS = [
+  { id: "today", label: "Today" },
+  { id: "yesterday", label: "Yesterday" },
+  { id: "7", label: "Last 7 Days" },
+  { id: "30", label: "Last 30 Days" },
+  { id: "month", label: "This Month" },
+  { id: "custom", label: "Custom Date" },
+];
+
+const toIsoDate = (date) => {
+  const year = date.getFullYear();
+  const month = String(date.getMonth() + 1).padStart(2, "0");
+  const day = String(date.getDate()).padStart(2, "0");
+  return `${year}-${month}-${day}`;
+};
+
+const getVisitDateValue = (visit) => visit.date || (visit.createdAt?.seconds ? toIsoDate(new Date(visit.createdAt.seconds * 1000)) : "");
+const getVisitTimeValue = (visit) => visit.time || (visit.createdAt?.seconds ? new Date(visit.createdAt.seconds * 1000).toLocaleTimeString("en-IN", { timeZone: "Asia/Kolkata" }) : "");
+
+const getTrafficDateRange = (filter, customStart, customEnd) => {
+  const today = new Date();
+  today.setHours(0, 0, 0, 0);
+  const end = new Date(today);
+  const start = new Date(today);
+  if (filter === "yesterday") {
+    start.setDate(start.getDate() - 1);
+    end.setDate(end.getDate() - 1);
+  } else if (filter === "7") {
+    start.setDate(start.getDate() - 6);
+  } else if (filter === "30") {
+    start.setDate(start.getDate() - 29);
+  } else if (filter === "month") {
+    start.setDate(1);
+  } else if (filter === "custom") {
+    return { start: customStart || "0000-01-01", end: customEnd || "9999-12-31" };
+  }
+  return { start: toIsoDate(start), end: toIsoDate(end) };
+};
+
+const groupTraffic = (rows, keyGetter) => {
+  const map = new Map();
+  rows.forEach((row) => {
+    const key = keyGetter(row) || "Not Provided";
+    const entry = map.get(key) || [];
+    entry.push(row);
+    map.set(key, entry);
+  });
+  return Array.from(map.entries()).map(([key, visits]) => ({ key, visits }));
+};
+
+const topValue = (rows, keyGetter) => {
+  const grouped = groupTraffic(rows, keyGetter).sort((a, b) => b.visits.length - a.visits.length);
+  return grouped[0]?.key || "Not Provided";
+};
+
+function MiniBarChart({ title, data }) {
+  const max = Math.max(1, ...data.map((item) => Number(item.value || 0)));
+  return (
+    <section className="rounded-lg border border-blue-200 bg-[#0b4fb3] p-4">
+      <h3 className="text-sm font-extrabold">{title}</h3>
+      <div className="mt-4 grid gap-3">
+        {data.map((item) => (
+          <div key={item.label} className="grid gap-1">
+            <div className="flex justify-between gap-3 text-[11px] font-bold text-white">
+              <span className="truncate">{item.label}</span>
+              <span>{item.value}</span>
+            </div>
+            <div className="h-2 overflow-hidden rounded-full bg-[#063b91]">
+              <div className="h-full rounded-full bg-[#00E5FF]" style={{ width: `${Math.max(4, (Number(item.value || 0) / max) * 100)}%` }} />
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+function exportRowsToExcel(filename, rows) {
+  const normalizedRows = rows.map((row) =>
+    Object.fromEntries(Object.entries(row).filter(([key, value]) => typeof value !== "function" && value !== undefined)),
+  );
+  const headers = Array.from(new Set(normalizedRows.flatMap((row) => Object.keys(row))));
+  const html = `<table><thead><tr>${headers.map((header) => `<th>${header}</th>`).join("")}</tr></thead><tbody>${normalizedRows
+    .map((row) => `<tr>${headers.map((header) => `<td>${String(row[header] ?? "").replaceAll("&", "&amp;").replaceAll("<", "&lt;")}</td>`).join("")}</tr>`)
+    .join("")}</tbody></table>`;
+  const blob = new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8" });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement("a");
+  link.href = url;
+  link.download = filename;
+  link.click();
+  URL.revokeObjectURL(url);
+}
+
+function TrafficCounterSection() {
+  const [filter, setFilter] = React.useState("today");
+  const [customStart, setCustomStart] = React.useState("");
+  const [customEnd, setCustomEnd] = React.useState("");
+  const [sortOrder, setSortOrder] = React.useState("newest");
+  const [page, setPage] = React.useState(1);
+  const [visits, setVisits] = React.useState([]);
+  const [dailyRows, setDailyRows] = React.useState([]);
+  const [loading, setLoading] = React.useState(false);
+  const [hasLoaded, setHasLoaded] = React.useState(false);
+  const [trafficStatus, setTrafficStatus] = React.useState("Click Load Traffic Report to view traffic data.");
+  const pageSize = 25;
+
+  const range = React.useMemo(() => getTrafficDateRange(filter, customStart, customEnd), [filter, customStart, customEnd]);
+  const loadTrafficReport = React.useCallback(async () => {
+    if (!db) {
+      setTrafficStatus("Connect Firebase Firestore to load traffic report.");
+      return;
+    }
+    try {
+      setLoading(true);
+      setTrafficStatus("Loading traffic report...");
+      const [dailySnapshot, visitsSnapshot] = await Promise.all([
+        getDocs(query(collection(db, "trafficDaily"), orderBy("date", "desc"), limit(30))),
+        getDocs(query(collection(db, "trafficVisits"), orderBy("createdAt", "desc"), limit(100))),
+      ]);
+      const nextDailyRows = dailySnapshot.docs.map(normalizeDoc);
+      const nextVisits = visitsSnapshot.docs.map(normalizeDoc);
+      setDailyRows(nextDailyRows);
+      setVisits(nextVisits);
+      setHasLoaded(true);
+      logFirestoreSnapshot("manual:trafficDaily:30", dailySnapshot.docs.length);
+      logFirestoreSnapshot("manual:trafficVisits:100", visitsSnapshot.docs.length);
+      setTrafficStatus(`Traffic report loaded. Firestore reads used: ${dailySnapshot.docs.length + visitsSnapshot.docs.length}.`);
+    } catch (caughtError) {
+      console.error("Traffic report load failed:", caughtError);
+      setTrafficStatus(caughtError.message || "Unable to load traffic report.");
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const filteredVisits = React.useMemo(() => {
+    const rows = visits.filter((visit) => {
+      const date = getVisitDateValue(visit);
+      return date >= range.start && date <= range.end;
+    });
+    rows.sort((a, b) => {
+      const left = `${getVisitDateValue(a)} ${getVisitTimeValue(a)}`;
+      const right = `${getVisitDateValue(b)} ${getVisitTimeValue(b)}`;
+      return sortOrder === "newest" ? right.localeCompare(left) : left.localeCompare(right);
+    });
+    return rows;
+  }, [range, sortOrder, visits]);
+
+  React.useEffect(() => setPage(1), [filter, customStart, customEnd, sortOrder]);
+
+  const allVisits = visits;
+  const today = toIsoDate(new Date());
+  const sevenRange = getTrafficDateRange("7");
+  const monthRange = getTrafficDateRange("month");
+  const countWhere = (rows, predicate) => rows.filter(predicate).length;
+  const summaryCards = [
+    ["Total Visitors", allVisits.length],
+    ["Today Visitors", countWhere(allVisits, (visit) => getVisitDateValue(visit) === today)],
+    ["This Week Visitors", countWhere(allVisits, (visit) => getVisitDateValue(visit) >= sevenRange.start && getVisitDateValue(visit) <= sevenRange.end)],
+    ["This Month Visitors", countWhere(allVisits, (visit) => getVisitDateValue(visit) >= monthRange.start && getVisitDateValue(visit) <= monthRange.end)],
+    ["Mobile Visitors", countWhere(filteredVisits, (visit) => visit.deviceType === "Mobile")],
+    ["Desktop Visitors", countWhere(filteredVisits, (visit) => visit.deviceType === "Desktop")],
+    ["Tablet Visitors", countWhere(filteredVisits, (visit) => visit.deviceType === "Tablet")],
+    ["Google Visitors", countWhere(filteredVisits, (visit) => visit.sourceType === "Google")],
+    ["Meta Visitors", countWhere(filteredVisits, (visit) => visit.sourceType === "Meta/Facebook" || visit.sourceType === "Instagram")],
+    ["WhatsApp Visitors", countWhere(filteredVisits, (visit) => visit.sourceType === "WhatsApp")],
+    ["YouTube Visitors", countWhere(filteredVisits, (visit) => visit.sourceType === "YouTube")],
+    ["Direct Visitors", countWhere(filteredVisits, (visit) => visit.sourceType === "Direct")],
+  ];
+
+  const sourceRows = ["Google", "Meta/Facebook", "Instagram", "WhatsApp", "YouTube", "Direct", "Other"].map((source) => {
+    const rows = filteredVisits.filter((visit) => visit.sourceType === source);
+    return { source, count: rows.length, percentage: filteredVisits.length ? Math.round((rows.length / filteredVisits.length) * 100) : 0, topLandingPage: topValue(rows, (visit) => visit.landingPage || visit.pagePath) };
+  });
+
+  const keywordRows = groupTraffic(filteredVisits, (visit) => visit.searchKeyword || "Not Provided")
+    .map(({ key, visits: rows }) => ({
+      keyword: key,
+      source: topValue(rows, (visit) => visit.sourceType),
+      campaign: topValue(rows, (visit) => visit.utmCampaign || "Not Provided"),
+      visits: rows.length,
+      landingPage: topValue(rows, (visit) => visit.landingPage || visit.pagePath),
+      firstVisit: rows.map(getVisitDateValue).sort()[0] || "",
+      lastVisit: rows.map(getVisitDateValue).sort().at(-1) || "",
+    }))
+    .sort((a, b) => b.visits - a.visits)
+    .slice(0, 30);
+
+  const pageRows = groupTraffic(filteredVisits, (visit) => visit.pagePath || "Not Provided")
+    .map(({ key, visits: rows }) => ({
+      page: key,
+      visits: rows.length,
+      mobile: countWhere(rows, (visit) => visit.deviceType === "Mobile"),
+      desktop: countWhere(rows, (visit) => visit.deviceType === "Desktop"),
+      topSource: topValue(rows, (visit) => visit.sourceType),
+      lastVisit: rows.map((visit) => `${getVisitDateValue(visit)} ${getVisitTimeValue(visit)}`).sort().at(-1) || "",
+    }))
+    .sort((a, b) => b.visits - a.visits);
+
+  const visitRows = filteredVisits.map((visit) => ({
+    Date: getVisitDateValue(visit),
+    Time: getVisitTimeValue(visit),
+    Source: visit.sourceType || "Other",
+    Device: visit.deviceType || "Unknown",
+    Page: visit.pagePath || "",
+    Campaign: visit.utmCampaign || "Not Provided",
+    Keyword: visit.searchKeyword || "Not Provided",
+    "Landing Page": visit.landingPage || "",
+  }));
+  const pageCount = Math.max(1, Math.ceil(visitRows.length / pageSize));
+  const pagedRows = visitRows.slice((page - 1) * pageSize, page * pageSize);
+
+  const visitsByDate = groupTraffic(filteredVisits, getVisitDateValue)
+    .map(({ key, visits: rows }) => ({ label: key, value: rows.length }))
+    .sort((a, b) => a.label.localeCompare(b.label))
+    .slice(-14);
+  const deviceChart = ["Mobile", "Desktop", "Tablet"].map((device) => ({ label: device, value: countWhere(filteredVisits, (visit) => visit.deviceType === device) }));
+  const sourceChart = sourceRows.map((row) => ({ label: row.source, value: row.count }));
+  const topPagesChart = pageRows.slice(0, 6).map((row) => ({ label: row.page, value: row.visits }));
+
+  return (
+    <section className="grid gap-4">
+      <div className="rounded-lg border border-blue-200 bg-[#0b4fb3] p-4">
+        <div className="flex flex-col gap-3 lg:flex-row lg:items-center lg:justify-between">
+          <div>
+            <h2 className="text-lg font-extrabold">Traffic Counter</h2>
+            <p className="mt-1 text-xs text-white">{hasLoaded ? `Showing ${filteredVisits.length} recent visits. Report data is capped for performance.` : trafficStatus}</p>
+            <p className="mt-2 rounded-md border border-blue-200 bg-[#063b91] px-3 py-2 text-xs font-bold text-white">This report may read up to 100 traffic records plus up to 30 daily summary records.</p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button type="button" disabled={loading} onClick={loadTrafficReport} className="rounded-md bg-white px-3 py-2 text-xs font-extrabold text-[#1877f2] disabled:opacity-60">
+              {hasLoaded ? "Refresh Report" : "Load Traffic Report"}
+            </button>
+            <button type="button" disabled={!hasLoaded} onClick={() => exportRowsToCsv("traffic-visits.csv", visitRows)} className="rounded-md bg-white px-3 py-2 text-xs font-extrabold text-[#1877f2] disabled:opacity-60">Export CSV</button>
+            <button type="button" disabled={!hasLoaded} onClick={() => exportRowsToExcel("traffic-visits.xls", visitRows)} className="rounded-md bg-white px-3 py-2 text-xs font-extrabold text-[#1877f2] disabled:opacity-60">Export Excel</button>
+          </div>
+        </div>
+        <div className="mt-4 flex flex-wrap gap-2">
+          {TRAFFIC_FILTERS.map((item) => (
+            <button key={item.id} type="button" onClick={() => setFilter(item.id)} className={`rounded-md px-3 py-2 text-xs font-bold ${filter === item.id ? "bg-white text-[#1877f2]" : "bg-[#063b91] text-white"}`}>{item.label}</button>
+          ))}
+          <select value={sortOrder} onChange={(event) => setSortOrder(event.target.value)} className="rounded-md border border-blue-200 bg-[#063b91] px-3 py-2 text-xs font-bold text-white">
+            <option value="newest">Newest First</option>
+            <option value="oldest">Oldest First</option>
+          </select>
+        </div>
+        {filter === "custom" && (
+          <div className="mt-3 grid gap-2 sm:grid-cols-2">
+            <input type="date" value={customStart} onChange={(event) => setCustomStart(event.target.value)} className="rounded-md border border-blue-200 bg-[#063b91] px-3 py-2 text-sm text-white" />
+            <input type="date" value={customEnd} onChange={(event) => setCustomEnd(event.target.value)} className="rounded-md border border-blue-200 bg-[#063b91] px-3 py-2 text-sm text-white" />
+          </div>
+        )}
+        {!hasLoaded && (
+          <div className="mt-4 rounded-lg border border-blue-200 bg-[#063b91] p-4 text-sm font-bold text-white">
+            Click Load Traffic Report to view traffic data.
+          </div>
+        )}
+      </div>
+
+      <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+        {summaryCards.map(([label, value]) => (
+          <div key={label} className="rounded-lg border border-blue-200 bg-[#0b4fb3] p-4">
+            <p className="text-2xl font-black">{value}</p>
+            <p className="mt-1 text-xs font-bold text-white">{label}</p>
+          </div>
+        ))}
+      </div>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <MiniBarChart title="Visits by Date" data={visitsByDate} />
+        <MiniBarChart title="Mobile vs Desktop" data={deviceChart} />
+        <MiniBarChart title="Traffic Sources" data={sourceChart} />
+        <MiniBarChart title="Top Pages" data={topPagesChart} />
+      </div>
+
+      <section className="overflow-hidden rounded-lg border border-blue-200 bg-[#0b4fb3]">
+        <div className="border-b border-blue-200 p-4">
+          <h3 className="text-base font-extrabold">Visitor Table</h3>
+        </div>
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[860px] text-left text-xs">
+            <thead className="bg-[#063b91] text-white">
+              <tr>{Object.keys(visitRows[0] || { Date: "", Time: "", Source: "", Device: "", Page: "", Campaign: "", Keyword: "", "Landing Page": "" }).map((header) => <th key={header} className="px-3 py-3">{header}</th>)}</tr>
+            </thead>
+            <tbody>
+              {pagedRows.map((row, index) => (
+                <tr key={`${row.Date}-${row.Time}-${index}`} className="border-t border-blue-200/60">
+                  {Object.values(row).map((value, cellIndex) => <td key={cellIndex} className="px-3 py-3 align-top">{value}</td>)}
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+        <div className="flex items-center justify-between gap-3 border-t border-blue-200 p-3 text-xs font-bold">
+          <button type="button" onClick={() => setPage((current) => Math.max(1, current - 1))} className="rounded-md bg-[#063b91] px-3 py-2">Previous</button>
+          <span>Page {page} of {pageCount}</span>
+          <button type="button" onClick={() => setPage((current) => Math.min(pageCount, current + 1))} className="rounded-md bg-[#063b91] px-3 py-2">Next</button>
+        </div>
+      </section>
+
+      <div className="grid gap-4 xl:grid-cols-2">
+        <section className="rounded-lg border border-blue-200 bg-[#0b4fb3] p-4">
+          <h3 className="text-base font-extrabold">Source Breakdown</h3>
+          <div className="mt-3 grid gap-2">
+            {sourceRows.map((row) => <p key={row.source} className="rounded-md bg-[#063b91] p-3 text-xs font-bold">{row.source}: {row.count} visits / {row.percentage}% / Top: {row.topLandingPage}</p>)}
+          </div>
+        </section>
+        <section className="rounded-lg border border-blue-200 bg-[#0b4fb3] p-4">
+          <h3 className="text-base font-extrabold">Daily Aggregation</h3>
+          <div className="mt-3 grid gap-2">
+            {dailyRows.slice(0, 7).map((row) => <p key={row.date} className="rounded-md bg-[#063b91] p-3 text-xs font-bold">{row.date}: {row.totalVisits || 0} visits</p>)}
+          </div>
+        </section>
+      </div>
+
+      <section className="overflow-x-auto rounded-lg border border-blue-200 bg-[#0b4fb3] p-4">
+        <h3 className="text-base font-extrabold">Keyword Report</h3>
+        <table className="mt-3 w-full min-w-[760px] text-left text-xs">
+          <thead><tr>{["Keyword", "Source", "Campaign", "Visits", "Landing Page", "First Visit", "Last Visit"].map((header) => <th key={header} className="px-2 py-2">{header}</th>)}</tr></thead>
+          <tbody>{keywordRows.map((row) => <tr key={`${row.keyword}-${row.campaign}`} className="border-t border-blue-200/60"><td className="px-2 py-2">{row.keyword}</td><td className="px-2 py-2">{row.source}</td><td className="px-2 py-2">{row.campaign}</td><td className="px-2 py-2">{row.visits}</td><td className="px-2 py-2">{row.landingPage}</td><td className="px-2 py-2">{row.firstVisit}</td><td className="px-2 py-2">{row.lastVisit}</td></tr>)}</tbody>
+        </table>
+      </section>
+
+      <section className="overflow-x-auto rounded-lg border border-blue-200 bg-[#0b4fb3] p-4">
+        <h3 className="text-base font-extrabold">Page Report</h3>
+        <table className="mt-3 w-full min-w-[680px] text-left text-xs">
+          <thead><tr>{["Page", "Visits", "Mobile", "Desktop", "Top Source", "Last Visit"].map((header) => <th key={header} className="px-2 py-2">{header}</th>)}</tr></thead>
+          <tbody>{pageRows.map((row) => <tr key={row.page} className="border-t border-blue-200/60"><td className="px-2 py-2">{row.page}</td><td className="px-2 py-2">{row.visits}</td><td className="px-2 py-2">{row.mobile}</td><td className="px-2 py-2">{row.desktop}</td><td className="px-2 py-2">{row.topSource}</td><td className="px-2 py-2">{row.lastVisit}</td></tr>)}</tbody>
+        </table>
+      </section>
+    </section>
+  );
+}
+
 function LiveChatAdminCard({ chat, onDelete, onStatusChange }) {
   const [reply, setReply] = React.useState("");
   const [sending, setSending] = React.useState(false);
@@ -3534,25 +4642,26 @@ function LiveChatAdminCard({ chat, onDelete, onStatusChange }) {
 function AdminDashboard() {
   const navigate = useNavigate();
   const { user, logout, adminProfile, permissions } = useAuth();
+  const [activeAdminSection, setActiveAdminSection] = React.useState(() => (permissions.includes("reels") ? "reels" : permissions[0] || "live-chat"));
   const { items: reels } = useFirestoreCollection("reels", demoVideos);
   const { items: savedCategories } = useFirestoreCollection("categories", [], "label");
   const { items: savedSubcategories } = useFirestoreCollection("courseSubcategories", [], "label");
-  const { items: messages } = useFirestoreCollection("messages", demoMessages);
-  const { items: jobApplicants } = useFirestoreCollection("jobApplicants", []);
-  const { items: hiringCompanies } = useFirestoreCollection("hiringCompanies", []);
-  const { items: admissions } = useFirestoreCollection("admissions", []);
-  const { items: liveChats } = useFirestoreCollection("liveChats", []);
-  const { items: websiteContentItems } = useFirestoreCollection("websiteContent", defaultWebsiteContentItems);
-  const { items: faqs } = useFirestoreCollection("faqs", defaultFaqs, "orderIndex");
-  const { items: brochures } = useFirestoreCollection("brochures", [], "courseLabel");
-  const { items: headerBanners } = useFirestoreCollection("headerBanners", defaultHeaderBanners, "orderIndex");
-  const { data: branding } = useFirestoreDocument("branding", "main", defaultBranding);
-  const { items: adminUsers } = useFirestoreCollection("adminUsers", [], "email");
-  const { items: adminActivityLogs } = useFirestoreCollection("adminActivityLogs", [], "createdAt");
-  const { data: adminSeoContent } = useFirestoreDocument("seoContent", "main", defaultSeoContent);
-  const { data: salesFunnelContent } = useFirestoreDocument("salesFunnel", "main", defaultSalesFunnelContent);
-  const { data: playbackSettings } = useFirestoreDocument("settings", "playback", defaultPlaybackSettings);
-  const [activeAdminSection, setActiveAdminSection] = React.useState(() => (permissions.includes("reels") ? "reels" : permissions[0] || "live-chat"));
+  const { items: messages } = useFirestoreCollection("messages", demoMessages, "createdAt", activeAdminSection === "messages");
+  const { items: jobApplicants } = useFirestoreCollection("jobApplicants", [], "createdAt", activeAdminSection === "applicants");
+  const { items: hiringCompanies } = useFirestoreCollection("hiringCompanies", [], "createdAt", activeAdminSection === "companies");
+  const { items: admissions } = useFirestoreCollection("admissions", [], "createdAt", activeAdminSection === "admissions");
+  const { items: liveChats } = useFirestoreCollection("liveChats", [], "createdAt", activeAdminSection === "live-chat");
+  const { items: websiteContentItems } = useFirestoreCollection("websiteContent", defaultWebsiteContentItems, "createdAt", activeAdminSection === "website");
+  const { items: faqs } = useFirestoreCollection("faqs", defaultFaqs, "orderIndex", activeAdminSection === "faqs");
+  const { items: blogs } = useFirestoreCollection("blogs", defaultBlogs, "publishDate", activeAdminSection === "blogs");
+  const { items: brochures } = useFirestoreCollection("brochures", [], "courseLabel", activeAdminSection === "brochures");
+  const { items: headerBanners } = useFirestoreCollection("headerBanners", defaultHeaderBanners, "orderIndex", activeAdminSection === "banners");
+  const { data: branding } = useFirestoreDocument("branding", "main", defaultBranding, activeAdminSection === "branding");
+  const { items: adminUsers } = useFirestoreCollection("adminUsers", [], "email", activeAdminSection === "admin-users");
+  const { items: adminActivityLogs } = useFirestoreCollection("adminActivityLogs", [], "createdAt", activeAdminSection === "admin-users");
+  const { data: adminSeoContent } = useFirestoreDocument("seoContent", "main", defaultSeoContent, activeAdminSection === "seo");
+  const { data: salesFunnelContent } = useFirestoreDocument("salesFunnel", "main", defaultSalesFunnelContent, activeAdminSection === "sales-funnel");
+  const { data: playbackSettings } = useFirestoreDocument("settings", "playback", defaultPlaybackSettings, activeAdminSection === "reels");
   const [selectedCategory, setSelectedCategory] = React.useState("all");
   const [adminSearch, setAdminSearch] = React.useState("");
   const [editingReel, setEditingReel] = React.useState(null);
@@ -3591,6 +4700,27 @@ function AdminDashboard() {
   const [salesFunnelForm, setSalesFunnelForm] = React.useState(defaultSalesFunnelContent);
   const [editingFaq, setEditingFaq] = React.useState(null);
   const [faqForm, setFaqForm] = React.useState({ question: "", answer: "", category: "General", orderIndex: 10, active: true });
+  const [editingBlog, setEditingBlog] = React.useState(null);
+  const [blogForm, setBlogForm] = React.useState({
+    title: "",
+    slug: "",
+    category: BLOG_CATEGORIES[0],
+    shortDescription: "",
+    content: "",
+    seoTitle: "",
+    seoDescription: "",
+    seoKeywords: "",
+    author: BRAND_FULL_NAME,
+    featuredImage: "",
+    galleryImages: "",
+    videoUrl: "",
+    youtubeUrl: "",
+    publishDate: new Date().toISOString().slice(0, 10),
+    status: "Draft",
+    featured: false,
+  });
+  const [blogFeaturedFile, setBlogFeaturedFile] = React.useState(null);
+  const [blogVideoFile, setBlogVideoFile] = React.useState(null);
   const [brochureForm, setBrochureForm] = React.useState({ courseId: defaultCourseSubcategories[0].id, courseLabel: defaultCourseSubcategories[0].label, pdfUrl: "", pdfName: "", active: true });
   const [brochureFile, setBrochureFile] = React.useState(null);
   const [seoForm, setSeoForm] = React.useState(defaultSeoContent);
@@ -3604,7 +4734,7 @@ function AdminDashboard() {
     uid: "",
     email: "",
     role: ADMIN_ROLES.AGENT,
-    permissions: AGENT_PERMISSIONS,
+    permissions: DEFAULT_AGENT_PERMISSIONS,
     status: "active",
   });
 
@@ -3624,6 +4754,9 @@ function AdminDashboard() {
   const listedAdmissions = admissions.filter(matchesSearch);
   const listedLiveChats = liveChats.filter(matchesSearch);
   const listedFaqs = sortByOrder(faqs).filter(matchesSearch);
+  const listedBlogs = blogs
+    .filter(matchesSearch)
+    .sort((a, b) => String(b.publishDate || "").localeCompare(String(a.publishDate || "")));
   const listedBrochures = sortByOrder(brochures).filter(matchesSearch);
   const listedHeaderBanners = sortByOrder(headerBanners).filter(matchesSearch);
   const listedAdminUsers = adminUsers.filter(matchesSearch);
@@ -3642,6 +4775,7 @@ function AdminDashboard() {
     { id: "website", label: "Website Content", icon: Globe2 },
     { id: "branding", label: "Logo Manager", icon: Sparkles },
     { id: "banners", label: "Header Banner Manager", icon: LayoutDashboard },
+    { id: "blogs", label: "Blog Manager", icon: BookOpen },
     { id: "sales-funnel", label: "Sales Funnel Manager", icon: Sparkles },
     { id: "seo", label: "SEO Manager", icon: Search },
     { id: "faqs", label: "FAQ Manager", icon: BookOpen },
@@ -3651,6 +4785,7 @@ function AdminDashboard() {
     { id: "companies", label: "Hiring Companies", icon: BriefcaseBusiness },
     { id: "live-chat", label: "Live Chat", icon: Bell },
     { id: "messages", label: "Messages & Comments", icon: MessageCircle },
+    { id: "trafficCounter", label: "Traffic Counter", icon: BarChart3 },
     { id: "categories", label: "Categories", icon: BookOpen },
     { id: "analytics", label: "Analytics", icon: BarChart3 },
     { id: "admin-users", label: "Admin User Manager", icon: Lock },
@@ -3804,11 +4939,15 @@ function AdminDashboard() {
         setStatus("Enter a valid YouTube watch, shorts, youtu.be, or embed URL.");
         return;
       }
+      if (!isYoutube && !videoFile && !reelForm.videoUrl && !editingReel?.video && !editingReel?.mediaUrl && !editingReel?.videoUrl) {
+        setStatus("Upload a video/image file or edit an existing media URL before saving.");
+        return;
+      }
       const normalizedCategory = normalizeCategoryId(reelForm.category);
       const categoryLabel = categories.find((category) => normalizeCategoryId(category.id) === normalizedCategory)?.label || "Megatron";
       const subcategoryLabel =
         normalizedCategory === "courses"
-          ? courseSubcategories.find((subcategory) => subcategory.id === reelForm.subcategory)?.label || ""
+          ? courseSubcategories.find((subcategory) => normalizeSubcategoryId(subcategory.id) === normalizeSubcategoryId(reelForm.subcategory))?.label || ""
           : "";
       const autoSeoTitle = `${reelForm.title} | ${subcategoryLabel ? `${subcategoryLabel} | ` : ""}${categoryLabel} | Megatron Pune`;
       const autoSeoDescription =
@@ -3845,16 +4984,26 @@ function AdminDashboard() {
         caption: reelForm.caption,
         description: reelForm.caption,
         category: normalizedCategory,
+        categoryId: normalizedCategory,
+        categoryLabel,
         subcategory: normalizedCategory === "courses" ? reelForm.subcategory : "",
+        subcategoryId: normalizedCategory === "courses" ? normalizeSubcategoryId(reelForm.subcategory) : "",
+        subcategoryLabel,
         status: reelForm.status,
         video: isYoutube ? reelForm.videoUrl : uploadedVideo?.url || reelForm.videoUrl,
         mediaUrl: isYoutube ? reelForm.videoUrl : uploadedVideo?.url || reelForm.videoUrl,
+        videoUrl: isYoutube ? reelForm.videoUrl : uploadedVideo?.url || reelForm.videoUrl,
+        originalUrl: reelForm.videoUrl,
         youtubeUrl: isYoutube ? reelForm.videoUrl : "",
+        youtubeId: isYoutube ? youtubeId : "",
         embedUrl: isYoutube ? youtubeEmbedUrl : "",
         thumbnail: uploadedPoster?.url || reelForm.posterUrl || (isYoutube && youtubeId ? `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` : ""),
+        thumbnailUrl: uploadedPoster?.url || reelForm.posterUrl || (isYoutube && youtubeId ? `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` : ""),
         poster: uploadedPoster?.url || reelForm.posterUrl || (isYoutube && youtubeId ? `https://img.youtube.com/vi/${youtubeId}/hqdefault.jpg` : uploadedVideo?.url || reelForm.videoUrl),
         mediaType: mediaKind,
         type: mediaKind,
+        active: true,
+        published: reelForm.status === "Published",
         seoTitle: reelForm.seoTitle.trim() || autoSeoTitle,
         seoDescription: reelForm.seoDescription.trim() || autoSeoDescription,
         seoKeywords: reelForm.seoKeywords.trim() || autoSeoKeywords,
@@ -3881,6 +5030,7 @@ function AdminDashboard() {
       setStatus("Reel saved successfully.");
       resetReelForm();
     } catch (caughtError) {
+      console.error("Firestore reel save failed:", caughtError);
       setStatus(caughtError.message || "Unable to save reel.");
     } finally {
       setSavingReel(false);
@@ -3895,11 +5045,11 @@ function AdminDashboard() {
       author: reel.author || "Admin",
       caption: reel.caption || "",
       category: getReelCategoryId(reel) || categories[0]?.id,
-      subcategory: reel.subcategory || courseSubcategories[0]?.id || defaultCourseSubcategories[0].id,
+      subcategory: getReelSubcategoryId(reel) || courseSubcategories[0]?.id || defaultCourseSubcategories[0].id,
       orderIndex: String(reel.orderIndex ?? reel.order ?? ""),
       status: reel.status || "Published",
-      videoUrl: reel.youtubeUrl || reel.video || reel.mediaUrl || "",
-      posterUrl: reel.poster || "",
+      videoUrl: getReelMediaUrl(reel),
+      posterUrl: reel.poster || reel.thumbnail || reel.thumbnailUrl || "",
       type: reelMediaType,
       seoTitle: reel.seoTitle || "",
       seoDescription: reel.seoDescription || "",
@@ -4361,6 +5511,115 @@ function AdminDashboard() {
     await updateDoc(doc(db, "faqs", faq.docId), { active: faq.active === false, updatedAt: serverTimestamp() });
   };
 
+  const resetBlogForm = () => {
+    setEditingBlog(null);
+    setBlogFeaturedFile(null);
+    setBlogVideoFile(null);
+    setUploadProgress(0);
+    setBlogForm({
+      title: "",
+      slug: "",
+      category: BLOG_CATEGORIES[0],
+      shortDescription: "",
+      content: "",
+      seoTitle: "",
+      seoDescription: "",
+      seoKeywords: "",
+      author: BRAND_FULL_NAME,
+      featuredImage: "",
+      galleryImages: "",
+      videoUrl: "",
+      youtubeUrl: "",
+      publishDate: new Date().toISOString().slice(0, 10),
+      status: "Draft",
+      featured: false,
+    });
+  };
+
+  const saveBlog = async (event) => {
+    event.preventDefault();
+    if (!db) {
+      setStatus("Connect Firestore to save blogs.");
+      return;
+    }
+    const title = blogForm.title.trim();
+    const slug = makeSlug(blogForm.slug || title);
+    if (!title || !slug) {
+      setStatus("Add a blog title and slug.");
+      return;
+    }
+    try {
+      setStatus("Saving blog...");
+      setUploadProgress(0);
+      const uploadedImage = blogFeaturedFile ? await uploadPublicToCloudinary(blogFeaturedFile, "image", "blog-images", setUploadProgress) : null;
+      const uploadedVideo = blogVideoFile ? await uploadPublicToCloudinary(blogVideoFile, "video", "blog-videos", setUploadProgress) : null;
+      const payload = {
+        id: slug,
+        title,
+        slug,
+        category: blogForm.category || BLOG_CATEGORIES[0],
+        shortDescription: blogForm.shortDescription.trim(),
+        content: blogForm.content.trim(),
+        seoTitle: blogForm.seoTitle.trim() || `${title} | Megatron Blogs`,
+        seoDescription: blogForm.seoDescription.trim() || blogForm.shortDescription.trim(),
+        seoKeywords: blogForm.seoKeywords.trim(),
+        author: blogForm.author.trim() || BRAND_FULL_NAME,
+        featuredImage: uploadedImage?.url || blogForm.featuredImage.trim(),
+        featuredImagePublicId: uploadedImage?.publicId || editingBlog?.featuredImagePublicId || "",
+        galleryImages: blogForm.galleryImages.trim(),
+        videoUrl: uploadedVideo?.url || blogForm.videoUrl.trim(),
+        videoPublicId: uploadedVideo?.publicId || editingBlog?.videoPublicId || "",
+        youtubeUrl: blogForm.youtubeUrl.trim(),
+        publishDate: blogForm.publishDate || new Date().toISOString().slice(0, 10),
+        status: blogForm.status || "Draft",
+        featured: Boolean(blogForm.featured),
+        updatedAt: serverTimestamp(),
+        createdAt: editingBlog?.createdAt || serverTimestamp(),
+      };
+      await setDoc(doc(db, "blogs", editingBlog?.docId || slug), payload, { merge: true });
+      setStatus("Blog saved.");
+      resetBlogForm();
+    } catch (caughtError) {
+      setStatus(caughtError.message || "Unable to save blog.");
+    }
+  };
+
+  const editBlog = (blog) => {
+    setEditingBlog(blog);
+    setBlogFeaturedFile(null);
+    setBlogVideoFile(null);
+    setUploadProgress(0);
+    setBlogForm({
+      title: blog.title || "",
+      slug: blog.slug || blog.id || "",
+      category: blog.category || BLOG_CATEGORIES[0],
+      shortDescription: blog.shortDescription || "",
+      content: blog.content || "",
+      seoTitle: blog.seoTitle || "",
+      seoDescription: blog.seoDescription || "",
+      seoKeywords: Array.isArray(blog.seoKeywords) ? blog.seoKeywords.join(", ") : blog.seoKeywords || "",
+      author: blog.author || BRAND_FULL_NAME,
+      featuredImage: blog.featuredImage || "",
+      galleryImages: Array.isArray(blog.galleryImages) ? blog.galleryImages.join("\n") : blog.galleryImages || "",
+      videoUrl: blog.videoUrl || "",
+      youtubeUrl: blog.youtubeUrl || "",
+      publishDate: blog.publishDate || new Date().toISOString().slice(0, 10),
+      status: blog.status || "Draft",
+      featured: Boolean(blog.featured),
+    });
+    setActiveAdminSection("blogs");
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const deleteBlog = async (blog) => {
+    if (!db || !blog?.docId) {
+      setStatus("Default blogs cannot be deleted until saved to Firestore.");
+      return;
+    }
+    await deleteDoc(doc(db, "blogs", blog.docId));
+    setStatus("Blog deleted.");
+  };
+
   const updateBrochureCourse = (courseId) => {
     const course = defaultCourseSubcategories.find((item) => item.id === courseId) || defaultCourseSubcategories[0];
     setBrochureForm((form) => ({ ...form, courseId: course.id, courseLabel: course.label }));
@@ -4426,7 +5685,7 @@ function AdminDashboard() {
       uid: "",
       email: "",
       role: ADMIN_ROLES.AGENT,
-      permissions: AGENT_PERMISSIONS,
+      permissions: DEFAULT_AGENT_PERMISSIONS,
       status: "active",
     });
   };
@@ -4898,7 +6157,7 @@ function AdminDashboard() {
               {listedReels.map((video) => {
                 const normalizedCategory = getReelCategoryId(video);
                 const category = categories.find((item) => normalizeCategoryId(item.id) === normalizedCategory);
-                const subcategory = courseSubcategories.find((item) => item.id === video.subcategory);
+                const subcategory = courseSubcategories.find((item) => normalizeSubcategoryId(item.id) === getReelSubcategoryId(video));
                 const CategoryIcon = iconByCategory[normalizedCategory] || FileVideo;
                 const mediaBadge = getReelMediaType(video);
                 const thumbnailSrc = mediaBadge === "youtube" ? getReelYoutubeThumbnail(video) : video.poster || video.thumbnail || getReelMediaUrl(video);
@@ -5167,6 +6426,122 @@ function AdminDashboard() {
                     />
                   </article>
                 ))}
+              </div>
+            </div>
+          </section>
+        )}
+
+        {activeAdminSection === "blogs" && (
+          <section className="mt-5 grid gap-5 xl:grid-cols-[0.95fr_1.05fr]">
+            <form onSubmit={saveBlog} className="rounded-lg border border-blue-200 bg-[#0b4fb3] p-4">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <h2 className="text-base font-bold">{editingBlog ? "Edit Blog" : "Create Blog"}</h2>
+                  <p className="mt-1 text-xs text-white">Publish educational blogs with SEO, images, video, and YouTube embeds.</p>
+                </div>
+                <BookOpen size={20} />
+              </div>
+              <div className="mt-5 grid gap-3">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <FormField label="Title" value={blogForm.title} onChange={(value) => setBlogForm((form) => ({ ...form, title: value, slug: form.slug || makeSlug(value) }))} required />
+                  <FormField label="Slug" value={blogForm.slug} onChange={(value) => setBlogForm((form) => ({ ...form, slug: makeSlug(value) }))} required />
+                </div>
+                <div className="grid gap-3 sm:grid-cols-3">
+                  <label className="grid gap-1.5 text-xs font-medium text-white">
+                    Category
+                    <select value={blogForm.category} onChange={(event) => setBlogForm((form) => ({ ...form, category: event.target.value }))} className="h-11 rounded-md border border-blue-200 bg-[#0b4fb3] px-3 text-sm text-white outline-none">
+                      {BLOG_CATEGORIES.map((category) => <option key={category} value={category}>{category}</option>)}
+                    </select>
+                  </label>
+                  <FormField label="Publish Date" value={blogForm.publishDate} onChange={(value) => setBlogForm((form) => ({ ...form, publishDate: value }))} type="date" />
+                  <label className="grid gap-1.5 text-xs font-medium text-white">
+                    Status
+                    <select value={blogForm.status} onChange={(event) => setBlogForm((form) => ({ ...form, status: event.target.value }))} className="h-11 rounded-md border border-blue-200 bg-[#0b4fb3] px-3 text-sm text-white outline-none">
+                      <option value="Draft">Draft</option>
+                      <option value="Published">Published</option>
+                    </select>
+                  </label>
+                </div>
+                <FormField label="Short Description" value={blogForm.shortDescription} onChange={(value) => setBlogForm((form) => ({ ...form, shortDescription: value }))} textarea required />
+                <FormField label="Full Blog Content" value={blogForm.content} onChange={(value) => setBlogForm((form) => ({ ...form, content: value }))} textarea required />
+                <p className="rounded-md border border-blue-200 bg-[#063b91] px-3 py-2 text-xs font-semibold text-white">Editor supports simple formatting: use lines starting with # for headings and - for bullet points. Add images, video, YouTube, and download links through the fields below.</p>
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <FormField label="SEO Title" value={blogForm.seoTitle} onChange={(value) => setBlogForm((form) => ({ ...form, seoTitle: value }))} />
+                  <FormField label="Author Name" value={blogForm.author} onChange={(value) => setBlogForm((form) => ({ ...form, author: value }))} />
+                </div>
+                <FormField label="SEO Description" value={blogForm.seoDescription} onChange={(value) => setBlogForm((form) => ({ ...form, seoDescription: value }))} textarea />
+                <FormField label="SEO Keywords" value={blogForm.seoKeywords} onChange={(value) => setBlogForm((form) => ({ ...form, seoKeywords: value }))} textarea />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <FormField label="Featured Image URL" value={blogForm.featuredImage} onChange={(value) => setBlogForm((form) => ({ ...form, featuredImage: value }))} type="url" />
+                  <label className="grid gap-1.5 text-xs font-medium text-white">
+                    Upload Featured Image
+                    <input type="file" accept="image/png,image/jpeg,image/webp,image/svg+xml,.svg" onChange={(event) => setBlogFeaturedFile(event.target.files?.[0] || null)} className="rounded-md border border-blue-200 bg-[#063b91] px-3 py-3 text-sm text-white" />
+                  </label>
+                </div>
+                <FormField label="Gallery Images" value={blogForm.galleryImages} onChange={(value) => setBlogForm((form) => ({ ...form, galleryImages: value }))} textarea placeholder="Paste one image URL per line" />
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <FormField label="Video URL" value={blogForm.videoUrl} onChange={(value) => setBlogForm((form) => ({ ...form, videoUrl: value }))} type="url" />
+                  <label className="grid gap-1.5 text-xs font-medium text-white">
+                    Upload Video
+                    <input type="file" accept="video/mp4,video/webm,video/quicktime" onChange={(event) => setBlogVideoFile(event.target.files?.[0] || null)} className="rounded-md border border-blue-200 bg-[#063b91] px-3 py-3 text-sm text-white" />
+                  </label>
+                </div>
+                <FormField label="YouTube Video Link" value={blogForm.youtubeUrl} onChange={(value) => setBlogForm((form) => ({ ...form, youtubeUrl: value }))} type="url" />
+                <label className="flex items-center justify-between gap-4 rounded-md border border-blue-200 bg-[#063b91] px-3 py-3 text-sm font-bold">
+                  Featured Blog
+                  <input type="checkbox" checked={blogForm.featured} onChange={(event) => setBlogForm((form) => ({ ...form, featured: event.target.checked }))} className="h-5 w-5" />
+                </label>
+                {uploadProgress > 0 && <p className="text-xs font-bold text-white">Upload progress: {uploadProgress}%</p>}
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <button className="flex h-11 items-center justify-center gap-2 rounded-md bg-white text-sm font-bold text-[#1877f2]">
+                    <Save size={17} />
+                    Save Blog
+                  </button>
+                  <button type="button" onClick={resetBlogForm} className="h-11 rounded-md border border-blue-200 bg-[#063b91] text-sm font-bold text-white">
+                    Clear
+                  </button>
+                </div>
+              </div>
+            </form>
+
+            <div className="rounded-lg border border-blue-200 bg-[#0b4fb3] p-4">
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+                <div>
+                  <h2 className="text-base font-bold">Blog Library</h2>
+                  <p className="mt-1 text-xs text-white">Edit drafts, publish posts, or open the public blog page.</p>
+                </div>
+                <Link to="/blogs" className="rounded-md bg-white px-3 py-2 text-xs font-bold text-[#1877f2]">Open Blogs</Link>
+              </div>
+              <div className="mt-4 grid gap-3">
+                {listedBlogs.map((blog) => (
+                  <article key={blog.docId || blog.id || blog.slug} className="rounded-lg border border-blue-200 bg-[#063b91] p-3">
+                    <div className="grid gap-3 sm:grid-cols-[7rem_1fr]">
+                      <img src={blog.featuredImage || BRAND_LOGO_SRC} alt={blog.title || "Blog"} className="h-28 w-full rounded-md object-cover" loading="lazy" />
+                      <div className="min-w-0">
+                        <div className="flex items-start justify-between gap-3">
+                          <div className="min-w-0">
+                            <p className="truncate text-sm font-bold">{blog.title || "Untitled blog"}</p>
+                            <p className="mt-1 text-xs text-white">{blog.category || "Career"} / {blog.status || "Draft"} / {blog.publishDate || "No date"}</p>
+                          </div>
+                          <div className="flex shrink-0 items-center gap-1">
+                            <Link to={`/blogs/${blog.slug || blog.id}`} className="grid h-8 w-8 place-items-center rounded-md bg-[#0b4fb3]" aria-label="Open blog">
+                              <Eye size={15} />
+                            </Link>
+                            <button type="button" onClick={() => editBlog(blog)} className="grid h-8 w-8 place-items-center rounded-md bg-[#0b4fb3]" aria-label="Edit blog">
+                              <Pencil size={15} />
+                            </button>
+                            <button type="button" onClick={() => deleteBlog(blog)} className="grid h-8 w-8 place-items-center rounded-md bg-[#0b4fb3] text-rose-100" aria-label="Delete blog">
+                              <Trash2 size={15} />
+                            </button>
+                          </div>
+                        </div>
+                        <p className="mt-2 line-clamp-2 text-xs leading-5 text-white">{blog.shortDescription || "No short description added."}</p>
+                        {blog.featured && <span className="mt-2 inline-flex rounded-full bg-[#00E5FF] px-3 py-1 text-[10px] font-black uppercase text-[#061B3A]">Featured</span>}
+                      </div>
+                    </div>
+                  </article>
+                ))}
+                {!listedBlogs.length && <p className="rounded-lg border border-blue-200 bg-[#063b91] p-4 text-sm font-bold text-white">No blogs found.</p>}
               </div>
             </div>
           </section>
@@ -5755,6 +7130,10 @@ function AdminDashboard() {
         </section>
         )}
 
+        {activeAdminSection === "trafficCounter" && (
+          <TrafficCounterSection />
+        )}
+
         {activeAdminSection === "admin-users" && isSuperAdmin && (
           <section className="mt-5 grid gap-5 lg:grid-cols-[0.9fr_1.1fr]">
             <form onSubmit={saveAdminUser} className="rounded-lg border border-blue-200 bg-[#0b4fb3] p-4">
@@ -5773,7 +7152,7 @@ function AdminDashboard() {
                     Role
                     <select
                       value={adminUserForm.role}
-                      onChange={(event) => setAdminUserForm((form) => ({ ...form, role: event.target.value, permissions: event.target.value === ADMIN_ROLES.SUPER ? SUPER_ADMIN_PERMISSIONS : AGENT_PERMISSIONS }))}
+                      onChange={(event) => setAdminUserForm((form) => ({ ...form, role: event.target.value, permissions: event.target.value === ADMIN_ROLES.SUPER ? SUPER_ADMIN_PERMISSIONS : DEFAULT_AGENT_PERMISSIONS }))}
                       className="h-11 rounded-md border border-blue-200 bg-[#0b4fb3] px-3 text-sm text-white outline-none"
                     >
                       <option value={ADMIN_ROLES.SUPER}>Super Admin</option>
@@ -6071,10 +7450,13 @@ function App() {
   return (
     <BrowserRouter>
       <AuthProvider>
+        <TrafficTracker />
         <Routes>
           <Route path="/" element={<ReelsApp />} />
           <Route path="/offer" element={<SalesFunnelPage />} />
           <Route path="/faqs" element={<FaqPage />} />
+          <Route path="/blogs" element={<BlogsPage />} />
+          <Route path="/blogs/:slug" element={<BlogDetailPage />} />
           <Route path="/privacypolicy" element={<PrivacyPolicy />} />
           <Route path="/admin-login" element={<AdminLogin />} />
           <Route
